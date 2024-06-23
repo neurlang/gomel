@@ -68,6 +68,16 @@ func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
 
 }
 
+// LoadFlac loads mono flac file to sample vector
+func LoadFlac(inputFile string) []float64 {
+	return loadflac(inputFile)
+}
+
+// LoadWav loads mono wav file to sample vector
+func LoadWav(inputFile string) []float64 {
+	return loadwav(inputFile)
+}
+
 // ToMel generates a mel spectrogram from an input FLAC audio file and saves it as a PNG image.
 func (m *Mel) ToMelFlac(inputFile, outputFile string) error {
 
