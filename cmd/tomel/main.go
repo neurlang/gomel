@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"localhost/gomel/mel" // make sure this is the correct import path for your `libmel` package
+	"github.com/neurlang/gomel/mel"
+	"strings"
 )
 
 func main() {
@@ -27,12 +28,32 @@ func main() {
 	m.Window = 1024
 	m.Resolut = 8192
 
-	// Generate the mel spectrogram and save it as a PNG file
-	inputFile := filename + ".wav"
-	outputFile := filename + ".png"
-	err := m.ToMelWav(inputFile, outputFile)
-	if err != nil {
-		fmt.Printf("Error generating mel spectrogram: %v\n", err)
-		os.Exit(1)
+	if strings.HasSuffix(filename, ".flac") {
+		// Generate the mel spectrogram and save it as a PNG file
+		inputFile := filename
+		outputFile := filename + ".png"
+		err := m.ToMelFlac(inputFile, outputFile)
+		if err != nil {
+			fmt.Printf("Error generating mel spectrogram: %v\n", err)
+			os.Exit(1)
+		}
+	} else if strings.HasSuffix(filename, ".wav") {
+		// Generate the mel spectrogram and save it as a PNG file
+		inputFile := filename
+		outputFile := filename + ".png"
+		err := m.ToMelWav(inputFile, outputFile)
+		if err != nil {
+			fmt.Printf("Error generating mel spectrogram: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Generate the mel spectrogram and save it as a PNG file
+		inputFile := filename + ".wav"
+		outputFile := filename + ".png"
+		err := m.ToMelWav(inputFile, outputFile)
+		if err != nil {
+			fmt.Printf("Error generating mel spectrogram: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

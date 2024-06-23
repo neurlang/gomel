@@ -31,13 +31,9 @@ func NewMel() *Mel {
 
 var ErrFileNotLoaded = errors.New("wavNotLoaded")
 
-// ToMel generates a mel spectrogram from an input audio file and saves it as a PNG image.
-func (m *Mel) ToMelWav(inputFile, outputFile string) error {
+// ToMel generates a mel spectrogram from a wave buffer and returns the mel buffer.
+func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
 
-	var buf = loadwav(inputFile)
-	if len(buf) == 0 {
-		return ErrFileNotLoaded
-	}
 
 	buf = pad(buf, m.Window)
 
@@ -67,6 +63,42 @@ func (m *Mel) ToMelWav(inputFile, outputFile string) error {
 	ospectrum = domel(m.Resolut/2, m.NumMels, ospectrum, m.MelFmin, m.MelFmax)
 
 	spectral_normalize(ospectrum)
+
+	return ospectrum, nil
+
+}
+
+// ToMel generates a mel spectrogram from an input FLAC audio file and saves it as a PNG image.
+func (m *Mel) ToMelFlac(inputFile, outputFile string) error {
+
+	var buf = loadflac(inputFile)
+	if len(buf) == 0 {
+		return ErrFileNotLoaded
+	}
+
+	ospectrum, err := m.ToMel(buf)
+	if err != nil {
+		return err
+	}
+
+	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse)
+
+	return nil
+}
+
+// ToMel generates a mel spectrogram from an input WAV audio file and saves it as a PNG image.
+func (m *Mel) ToMelWav(inputFile, outputFile string) error {
+
+	var buf = loadwav(inputFile)
+	if len(buf) == 0 {
+		return ErrFileNotLoaded
+	}
+
+	ospectrum, err := m.ToMel(buf)
+	if err != nil {
+		return err
+	}
+
 	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse)
 
 	return nil

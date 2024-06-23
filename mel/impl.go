@@ -3,8 +3,10 @@ package libmel
 import "image"
 import "image/png"
 import "os"
+import "io"
 import "image/color"
 import "github.com/faiface/beep/wav"
+import "github.com/mewkiz/flac"
 import "math"
 
 func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
@@ -87,7 +89,35 @@ func loadwav(name string) (out []float64) {
 			out = append(out, samples[i][0])
 		}
 	}
+	return
+}
 
+func loadflac(name string) (out []float64) {
+	// Open love.flac for audio streaming without parsing metadata.
+	stream, err := flac.Open(name)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+	defer stream.Close()
+
+	for {
+		// Parse one frame of audio samples at the time, each frame containing one
+		// subframe per audio channel.
+		frame, err := stream.ParseNext()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+		}
+
+		for _, subframe := range frame.Subframes {
+			for _, sample := range subframe.Samples {
+				out = append(out, float64(sample)/(256*256))
+			}
+			//break
+		}
+	}
 	return
 }
 
