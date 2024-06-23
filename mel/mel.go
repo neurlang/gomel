@@ -32,7 +32,7 @@ func NewMel() *Mel {
 var ErrFileNotLoaded = errors.New("wavNotLoaded")
 
 // ToMel generates a mel spectrogram from an input audio file and saves it as a PNG image.
-func (m *Mel) ToMel(inputFile, outputFile string) error {
+func (m *Mel) ToMelWav(inputFile, outputFile string) error {
 
 	var buf = loadwav(inputFile)
 	if len(buf) == 0 {

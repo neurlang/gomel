@@ -30,7 +30,7 @@ func main() {
 	// Generate the mel spectrogram and save it as a PNG file
 	inputFile := filename + ".wav"
 	outputFile := filename + ".png"
-	err := m.ToMel(inputFile, outputFile)
+	err := m.ToMelWav(inputFile, outputFile)
 	if err != nil {
 		fmt.Printf("Error generating mel spectrogram: %v\n", err)
 		os.Exit(1)
