@@ -1,6 +1,6 @@
 module localhost/gomel
 
-go 1.22.3
+go 1.13
 
 require (
 	github.com/faiface/beep v1.1.0
