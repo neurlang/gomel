@@ -1,4 +1,4 @@
-package libmel
+package mel
 
 import "image"
 import "image/png"

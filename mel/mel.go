@@ -1,4 +1,4 @@
-package libmel
+package mel
 
 import "github.com/r9y9/gossp/stft"
 import "math"
