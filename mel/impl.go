@@ -9,6 +9,36 @@ import "github.com/faiface/beep/wav"
 import "github.com/mewkiz/flac"
 import "math"
 
+func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
+	stride := len(buf) / mels
+
+	var mgc_max, mgc_min = [2]float64{(-99999999.), (-99999999.)}, [2]float64{(9999999.), (9999999.)}
+
+	for x := 0; x < stride; x++ {
+		for l := 0; l < 2; l++ {
+			for y := 0; y < mels; y++ {
+				var w = buf[stride*y+x][l]
+				if w > mgc_max[l] {
+					mgc_max[l] = w
+				}
+				if w < mgc_min[l] {
+					mgc_min[l] = w
+				}
+			}
+		}
+	}
+	for y := 0; y < mels; y++ {
+		for x := 0; x < stride; x++ {
+			val0 := (buf[stride*y+x][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
+			val1 := (buf[stride*y+x][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
+			val := uint16(int(255*val0)) | uint16(int(255*val1))<<8
+
+			out = append(out, val)
+		}
+	}
+	return
+}
+
 func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 	f, err := os.Create(name)
 	if err != nil {
@@ -19,19 +49,20 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 
 	img := image.NewRGBA(image.Rect(0, 0, stride, mels))
 
-	var mgc_max, mgc_min = [2]float64{(-99999999.),(-99999999.)}, [2]float64{(9999999.),(9999999.)}
+	var mgc_max, mgc_min = [2]float64{(-99999999.), (-99999999.)}, [2]float64{(9999999.), (9999999.)}
 
 	for x := 0; x < stride; x++ {
 		for l := 0; l < 2; l++ {
-		for y := 0; y < mels; y++ {
-			var w = buf[stride*y+x][l]
-			if w > mgc_max[l] {
-				mgc_max[l] = w
+			for y := 0; y < mels; y++ {
+				var w = buf[stride*y+x][l]
+				if w > mgc_max[l] {
+					mgc_max[l] = w
+				}
+				if w < mgc_min[l] {
+					mgc_min[l] = w
+				}
 			}
-			if w < mgc_min[l] {
-				mgc_min[l] = w
-			}
-		}}
+		}
 	}
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
@@ -40,7 +71,7 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 			val1 := (buf[stride*y+x][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			col.B = uint8(int(255 * (val0+val1)*0.5))
+			col.B = uint8(int(255 * (val0 + val1) * 0.5))
 			col.A = uint8(255)
 			if reverse {
 				img.SetRGBA(x, mels-y-1, col)
@@ -150,7 +181,7 @@ func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float
 				inlo, modlo, inhi = 0, 0, 0
 			}
 			var tot [2]float64
-			for l := 0; l< 2; l++ {
+			for l := 0; l < 2; l++ {
 
 				var total float64
 
@@ -210,5 +241,3 @@ func pad(buf []float64, filter int) []float64 {
 	}
 	return buf
 }
-
-

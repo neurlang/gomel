@@ -11,7 +11,7 @@ type Mel struct {
 	MelFmax  float64
 	TuneMul  float64
 	TuneAdd  float64
-	Window	 int
+	Window   int
 	Resolut  int
 	YReverse bool
 }
@@ -33,7 +33,6 @@ var ErrFileNotLoaded = errors.New("wavNotLoaded")
 
 // ToMel generates a mel spectrogram from a wave buffer and returns the mel buffer.
 func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
-
 
 	buf = pad(buf, m.Window)
 
@@ -76,6 +75,10 @@ func LoadFlac(inputFile string) []float64 {
 // LoadWav loads mono wav file to sample vector
 func LoadWav(inputFile string) []float64 {
 	return loadwav(inputFile)
+}
+
+func (m *Mel) Image(buf [][2]float64) []uint16 {
+	return dumpbuffer(buf, m.NumMels)
 }
 
 // ToMel generates a mel spectrogram from an input FLAC audio file and saves it as a PNG image.
