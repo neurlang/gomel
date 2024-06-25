@@ -5,9 +5,11 @@ import "image/png"
 import "os"
 import "io"
 import "image/color"
+import "github.com/faiface/beep"
 import "github.com/faiface/beep/wav"
 import "github.com/mewkiz/flac"
 import "math"
+import "math/rand"
 
 func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	stride := len(buf) / mels
@@ -39,7 +41,54 @@ func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	return
 }
 
+func loadpng(name string, reverse bool, spread int) (buf [][2]float64) {
+	// Open the PNG file
+	file, err := os.Open(name)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+	defer file.Close()
+
+	// Decode the PNG file
+	img, err := png.Decode(file)
+	if err != nil {
+		println(err.Error())
+		return nil
+	}
+
+	// Get the bounds of the image
+	bounds := img.Bounds()
+	var mgc float64
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+
+			var color color.Color
+			if reverse {
+				// Get the color of the pixel at (x, y) with y-coordinate reversed
+				color = img.At(x, bounds.Max.Y-y-1)
+			} else {
+				// Get the color of the pixel at (x, y)
+				color = img.At(x, y)
+			}
+			r, g, b, a := color.RGBA()
+
+			//println(128 + int(b) - ((int(a))/2))
+			mgc = math.Ldexp(1, -128+int(b)/int(math.Sqrt(float64(a))))
+
+			val0 := (mgc - float64(r)/float64(a)) * float64(spread)
+			val1 := (mgc - float64(g)/float64(a)) * float64(spread)
+
+			val := [2]float64{val0, val1}
+
+			buf = append(buf, val)
+		}
+	}
+	return
+}
+
 func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
+
 	f, err := os.Create(name)
 	if err != nil {
 		return err
@@ -47,36 +96,38 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 
 	stride := len(buf) / mels
 
-	img := image.NewRGBA(image.Rect(0, 0, stride, mels))
+	img := image.NewNRGBA(image.Rect(0, 0, stride, mels))
 
-	var mgc_max, mgc_min = [2]float64{(-99999999.), (-99999999.)}, [2]float64{(9999999.), (9999999.)}
+	var mgc_max, mgc_min = (-math.MaxFloat64), (math.MaxFloat64)
 
 	for x := 0; x < stride; x++ {
 		for l := 0; l < 2; l++ {
 			for y := 0; y < mels; y++ {
 				var w = buf[stride*y+x][l]
-				if w > mgc_max[l] {
-					mgc_max[l] = w
+				if w > mgc_max {
+					mgc_max = w
 				}
-				if w < mgc_min[l] {
-					mgc_min[l] = w
+				if w < mgc_min {
+					mgc_min = w
 				}
 			}
 		}
 	}
+	_, exp := math.Frexp((mgc_max + mgc_min) / 2)
+	exp += 128
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
-			var col color.RGBA
-			val0 := (buf[stride*y+x][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
-			val1 := (buf[stride*y+x][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
+			var col color.NRGBA
+			val0 := (buf[stride*y+x][0] - mgc_min) / (mgc_max - mgc_min)
+			val1 := (buf[stride*y+x][1] - mgc_min) / (mgc_max - mgc_min)
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			col.B = uint8(int(255 * (val0 + val1) * 0.5))
+			col.B = uint8(int(exp))
 			col.A = uint8(255)
 			if reverse {
-				img.SetRGBA(x, mels-y-1, col)
+				img.SetNRGBA(x, mels-y-1, col)
 			} else {
-				img.SetRGBA(x, y, col)
+				img.SetNRGBA(x, y, col)
 			}
 		}
 	}
@@ -90,6 +141,45 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 		return err
 	}
 
+	return nil
+}
+
+func dumpwav(name string, data []float64, sr int) error {
+	noise := beep.StreamerFunc(func(samples [][2]float64) (n int, ok bool) {
+		if len(data) < len(samples) {
+			for i := range data {
+				samples[i][0] = data[i]
+				samples[i][1] = data[i]
+			}
+			l := len(data)
+			data = nil
+			return l, false
+		} else {
+			for i := range samples {
+				samples[i][0] = data[i]
+				samples[i][1] = data[i]
+			}
+			data = data[len(samples):]
+			return len(samples), true
+		}
+	})
+
+	// Create an output file
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Create a WAV encoder
+	err = wav.Encode(f, noise, beep.Format{
+		SampleRate:  beep.SampleRate(sr),
+		NumChannels: 1,
+		Precision:   2,
+	})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -206,6 +296,78 @@ func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float
 	}
 
 	return
+
+}
+
+func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax float64) (spectrum [][2]float64) {
+	var filterbin = hz_to_mel(mel_fmax) / float64(mels)
+	//originalLength := filtersize * mels
+	stride := len(melspectrum) / mels
+
+	for j := 0; j < len(melspectrum)/mels; j++ {
+
+		for i := 0; i < filtersize; i++ {
+
+			vallo := float64(hz_to_mel((float64(i)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
+			valhi := float64(hz_to_mel((float64(i+1)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
+
+			var inlo, _ = math.Modf(vallo)
+			var inhi = math.Floor(valhi)
+			if inlo < 0 {
+				inlo, inhi = 0, 0
+			}
+			var tot [2]float64
+			for l := 0; l < 2; l++ {
+				var total float64
+
+				if int(inlo) == int(inhi) {
+					total += melspectrum[j+stride*int(inlo)][l]
+				} else if int(inlo)+1 == int(inhi) && int(inhi) < mels {
+					total += melspectrum[j+stride*int(inlo)][l] / 2
+					total += melspectrum[j+stride*int(inhi)][l] / 2
+				} else {
+
+					for k := int(inlo); k < int(inhi); k++ {
+						var sample = melspectrum[j+stride*k][l]
+						sample /= inhi - inlo
+						total += sample
+					}
+				}
+
+				tot[l] = total
+			}
+
+			spectrum = append(spectrum, tot)
+		}
+	}
+
+	return
+}
+
+func (m *Mel) undospectrum(ospectrum [][2]float64) (spectrum [][]complex128) {
+	spectrum = make([][]complex128, len(ospectrum)/(m.Resolut/2))
+
+	for i := range spectrum {
+		spectrum[i] = make([]complex128, m.Resolut)
+		for j := 0; j < m.Resolut/2; j++ {
+			index := i*(m.Resolut/2) + j
+			realn0 := ospectrum[index][0]
+			realn1 := ospectrum[index][1]
+
+			// Reverse the tuning adjustments
+			originalMagnitude0 := (realn0 - m.TuneAdd) / m.TuneMul
+			originalMagnitude1 := (realn1 - m.TuneAdd) / m.TuneMul
+
+			// Assuming phase to be 0 as we don't have the original phase information
+			v0 := complex(originalMagnitude0, rand.Float64())
+			v1 := complex(originalMagnitude1, rand.Float64())
+
+			spectrum[i][j] = v0
+			spectrum[i][m.Resolut-j-1] = v1
+		}
+	}
+
+	return
 }
 
 func spectral_normalize(buf [][2]float64) {
@@ -215,6 +377,14 @@ func spectral_normalize(buf [][2]float64) {
 				buf[i][l] = 1e-5
 			}
 			buf[i][l] = float64(math.Log(float64(buf[i][l])))
+		}
+	}
+}
+
+func spectral_denormalize(buf [][2]float64) {
+	for l := 0; l < 2; l++ {
+		for i := range buf {
+			buf[i][l] = float64(math.Exp(float64(buf[i][l])))
 		}
 	}
 }

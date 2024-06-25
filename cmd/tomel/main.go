@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"github.com/neurlang/gomel/mel"
+	"os"
 	"strings"
 )
 
@@ -18,10 +18,10 @@ func main() {
 	var filename = os.Args[1]
 
 	// Create a new instance of Mel
-	var m = libmel.NewMel()
+	var m = mel.NewMel()
 
 	// Set parameters
-	m.NumMels = 80
+	m.NumMels = 160
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
