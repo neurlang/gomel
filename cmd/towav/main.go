@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/neurlang/gomel/mel"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -15,6 +16,12 @@ func main() {
 
 	// Get the filename from the command-line arguments
 	var filename = os.Args[1]
+	var freq = "44100"
+
+	if len(os.Args) > 2 {
+		freq = os.Args[2]
+	}
+	frequency, _ := strconv.Atoi(freq)
 
 	// Create a new instance of Mel
 	var m = mel.NewMel()
@@ -24,10 +31,13 @@ func main() {
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
-	m.Window = 1024
+	m.Window = 256
 	m.Resolut = 8192
-	m.GriffinLimIterations = 5
-	m.Spread = -13
+	m.GriffinLimIterations = 20
+	m.VolumeBoost = 0.0
+
+	m.SampleRate = frequency
+
 	// Generate the wave from a PNG file
 	inputFile := filename
 	outputFile := filename + ".wav"

@@ -5,6 +5,7 @@ import "github.com/mjibson/go-dsp/fft"
 import "math"
 import "errors"
 import "math/cmplx"
+import "math/rand"
 
 // Mel represents the configuration for generating mel spectrograms.
 type Mel struct {
@@ -19,8 +20,11 @@ type Mel struct {
 
 	GriffinLimIterations int
 
-	// spread when loading spectrogram from image, can be a value like -10
-	Spread int
+	// VolumeBoost when loading spectrogram from image, can be a value like 1.666
+	VolumeBoost float64
+
+	// sample rate for output wav
+	SampleRate int
 }
 
 // NewMel creates a new Mel instance with default values.
@@ -73,26 +77,18 @@ func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
 }
 
 func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float64 {
+	frameShift := s.FrameShift
 	frameLen := len(spectrogram[0])
 	numFrames := len(spectrogram)
-	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*s.FrameShift)
-	windowSum := make([]float64, frameLen+(numFrames-1)*s.FrameShift)
+	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*frameShift)
+	windowSum := make([]float64, frameLen+(numFrames-1)*frameShift)
 
-	// Initial reconstruction
+	// Initial reconstruction with a random phase
 	for i := 0; i < numFrames; i++ {
-		buf := fft.IFFT(spectrogram[i])
-		index := 0
-		for t := i * s.FrameShift; t < i*s.FrameShift+frameLen; t++ {
-			reconstructedSignal[t] += real(buf[index]) * s.Window[index]
-			windowSum[t] += s.Window[index]
-			index++
-		}
-	}
-
-	// Normalize reconstructed signal by window sum
-	for i := range reconstructedSignal {
-		if windowSum[i] != 0 {
-			reconstructedSignal[i] /= windowSum[i]
+		for j := range spectrogram[i] {
+			magnitude0 := cmplx.Abs(spectrogram[i][j])
+			phase := 2 * math.Pi * rand.Float64()
+			spectrogram[i][j] = cmplx.Rect(magnitude0, phase)
 		}
 	}
 
@@ -102,8 +98,8 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 		for i := 0; i < numFrames; i++ {
 			frame := make([]float64, frameLen)
 			for j := 0; j < frameLen; j++ {
-				if i*s.FrameShift+j < len(reconstructedSignal) {
-					frame[j] = reconstructedSignal[i*s.FrameShift+j] * s.Window[j]
+				if i*frameShift+j < len(reconstructedSignal) {
+					frame[j] = reconstructedSignal[i*frameShift+j] * s.Window[j]
 				}
 			}
 			stftFrame := fft.FFTReal(frame)
@@ -117,12 +113,12 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 		}
 
 		// Reconstruct the signal from the updated spectrogram
-		reconstructedSignal = make([]float64, frameLen+(numFrames-1)*s.FrameShift)
-		windowSum = make([]float64, frameLen+(numFrames-1)*s.FrameShift)
+		reconstructedSignal = make([]float64, frameLen+(numFrames-1)*frameShift)
+		windowSum = make([]float64, frameLen+(numFrames-1)*frameShift)
 		for i := 0; i < numFrames; i++ {
 			buf := fft.IFFT(spectrogram[i])
 			index := 0
-			for t := i * s.FrameShift; t < i*s.FrameShift+frameLen; t++ {
+			for t := i * frameShift; t < i*frameShift+frameLen; t++ {
 				reconstructedSignal[t] += real(buf[index]) * s.Window[index]
 				windowSum[t] += s.Window[index]
 				index++
@@ -142,30 +138,15 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 
 // FromMel generates a wave buffer from a mel spectrogram and returns the wave buffer.
 func (m *Mel) FromMel(ospectrum [][2]float64) ([]float64, error) {
-
 	spectral_denormalize(ospectrum)
 
-	ospectrum = undomel(m.Resolut/2, m.NumMels, ospectrum, m.MelFmin, m.MelFmax)
+	stft1 := stft.New(m.Window, m.Resolut)
 
-	for r := 0; r < int(math.Sqrt(float64(m.MelFmax-m.MelFmin)/float64(m.NumMels))); r++ {
-		for l := 0; l < 2; l++ {
-			for x := 0; x < len(ospectrum)/(m.Resolut/2); x++ {
-				for y := 1; y+1 < m.Resolut/2; y++ {
-					ospectrum[y+x*(m.Resolut/2)][l] = (ospectrum[y-1+x*(m.Resolut/2)][l] +
-						ospectrum[y+0+x*(m.Resolut/2)][l] +
-						ospectrum[y+1+x*(m.Resolut/2)][l]) / 3
-				}
-			}
-		}
-	}
+	undo := m.undospectrum(undomel(m.Resolut/2, m.NumMels, ospectrum, m.MelFmin, m.MelFmax))
 
-	spectrum := m.undospectrum(ospectrum)
+	buf1 := ISTFT(stft1, undo, m.GriffinLimIterations)
 
-	stft := stft.New(m.Window, m.Resolut)
-
-	buf := ISTFT(stft, spectrum, m.GriffinLimIterations)
-
-	return buf, nil
+	return buf1, nil
 }
 
 // LoadFlac loads mono flac file to sample vector
@@ -225,9 +206,14 @@ func (m *Mel) ToMelWav(inputFile, outputFile string) error {
 
 func (m *Mel) ToWavPng(inputFile, outputFile string) error {
 
-	var buf = loadpng(inputFile, m.YReverse, m.Spread)
+	var buf = loadpng(inputFile, m.YReverse)
 	if len(buf) == 0 {
 		return ErrFileNotLoaded
+	}
+
+	for i := range buf {
+		buf[i][0] += m.VolumeBoost
+		buf[i][1] += m.VolumeBoost
 	}
 
 	owave, err := m.FromMel(buf)
@@ -235,7 +221,7 @@ func (m *Mel) ToWavPng(inputFile, outputFile string) error {
 		return err
 	}
 
-	dumpwav(outputFile, owave, 44100)
+	dumpwav(outputFile, owave, m.SampleRate)
 
 	return nil
 }

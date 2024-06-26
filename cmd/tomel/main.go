@@ -25,7 +25,7 @@ func main() {
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
-	m.Window = 1024
+	m.Window = 256
 	m.Resolut = 8192
 
 	if strings.HasSuffix(filename, ".flac") {

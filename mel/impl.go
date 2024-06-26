@@ -10,6 +10,7 @@ import "github.com/faiface/beep/wav"
 import "github.com/mewkiz/flac"
 import "math"
 import "math/rand"
+import "encoding/binary"
 
 func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	stride := len(buf) / mels
@@ -41,7 +42,13 @@ func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	return
 }
 
-func loadpng(name string, reverse bool, spread int) (buf [][2]float64) {
+func unpackBytesToFloat64(bytes []byte) float64 {
+	bits := binary.LittleEndian.Uint64(bytes) // Read the bits from the byte slice
+	f := math.Float64frombits(bits)           // Convert uint64 bits to float64
+	return f
+}
+
+func loadpng(name string, reverse bool) (buf [][2]float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
@@ -59,7 +66,7 @@ func loadpng(name string, reverse bool, spread int) (buf [][2]float64) {
 
 	// Get the bounds of the image
 	bounds := img.Bounds()
-	var mgc float64
+	var floats []byte
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 
@@ -71,20 +78,35 @@ func loadpng(name string, reverse bool, spread int) (buf [][2]float64) {
 				// Get the color of the pixel at (x, y)
 				color = img.At(x, y)
 			}
-			r, g, b, a := color.RGBA()
+			r, g, b, _ := color.RGBA()
 
-			//println(128 + int(b) - ((int(a))/2))
-			mgc = math.Ldexp(1, -128+int(b)/int(math.Sqrt(float64(a))))
+			if x == 0 && y < 16 {
+				floats = append(floats, byte(b>>8))
+			}
 
-			val0 := (mgc - float64(r)/float64(a)) * float64(spread)
-			val1 := (mgc - float64(g)/float64(a)) * float64(spread)
+			val0 := float64(r>>8) / 255
+			val1 := float64(g>>8) / 255
 
 			val := [2]float64{val0, val1}
 
 			buf = append(buf, val)
 		}
 	}
+	var mgc_max, mgc_min = unpackBytesToFloat64(floats[0:8]), unpackBytesToFloat64(floats[8:16])
+
+	for i := range buf {
+		buf[i][0] = (buf[i][0]*(mgc_max-mgc_min) + mgc_min)
+		buf[i][1] = (buf[i][1]*(mgc_max-mgc_min) + mgc_min)
+	}
+	//dumpimage("test.png", buf, 160, reverse)
 	return
+}
+
+func packFloat64ToBytes(f float64) []byte {
+	bits := math.Float64bits(f)                // Convert float64 to uint64
+	bytes := make([]byte, 8)                   // Create a byte slice of size 8
+	binary.LittleEndian.PutUint64(bytes, bits) // Write the bits to the byte slice in little-endian order
+	return bytes
 }
 
 func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
@@ -113,8 +135,8 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 			}
 		}
 	}
-	_, exp := math.Frexp((mgc_max + mgc_min) / 2)
-	exp += 128
+	floats := append(packFloat64ToBytes(mgc_max), packFloat64ToBytes(mgc_min)...)
+	//println(mgc_max, mgc_min)
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
 			var col color.NRGBA
@@ -122,7 +144,7 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 			val1 := (buf[stride*y+x][1] - mgc_min) / (mgc_max - mgc_min)
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			col.B = uint8(int(exp))
+			col.B = uint8(int(floats[y&15]))
 			col.A = uint8(255)
 			if reverse {
 				img.SetNRGBA(x, mels-y-1, col)
@@ -255,67 +277,57 @@ func hz_to_mel(value float64) float64 {
 }
 
 func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float64) (melspectrum [][2]float64) {
-
-	var melbin = hz_to_mel(mel_fmax) / float64(mels)
+	melbin := hz_to_mel(mel_fmax) / float64(mels)
 
 	for i := 0; i < mels; i++ {
-		//var j = 0
 		for j := 0; j < len(spectrum); j += filtersize {
+			vallo := float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i))) / (mel_fmax + mel_fmin)
+			valhi := float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i+1))) / (mel_fmax + mel_fmin)
 
-			var vallo = float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i+0))) / (mel_fmax + mel_fmin)
-			var valhi = float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i+1))) / (mel_fmax + mel_fmin)
-
-			var inlo, modlo = math.Modf(vallo)
-			var inhi = math.Floor(valhi)
+			inlo, modlo := math.Modf(vallo)
+			inhi := math.Floor(valhi)
 			if inlo < 0 {
 				inlo, modlo, inhi = 0, 0, 0
 			}
+
 			var tot [2]float64
 			for l := 0; l < 2; l++ {
-
 				var total float64
 
 				if int(inlo)+1 == int(inhi) {
-					total += spectrum[j+int(inlo)][l] * float64(1-modlo)
-					total += spectrum[j+int(inhi)][l] * float64(modlo)
+					total += spectrum[j+int(inlo)][l] * (1 - modlo)
+					total += spectrum[j+int(inhi)][l] * modlo
 				} else {
-
 					for k := int(inlo); k < int(inhi); k++ {
-						var sample = spectrum[j+k][l]
-						total += sample
+						total += spectrum[j+k][l]
 					}
+					total /= float64(int(inhi) - int(inlo) + 1)
 				}
-
-				total /= float64(int(inhi) - int(inlo) + 1)
 
 				tot[l] = total
 			}
 			melspectrum = append(melspectrum, tot)
-
 		}
 	}
 
 	return
-
 }
 
 func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax float64) (spectrum [][2]float64) {
-	var filterbin = hz_to_mel(mel_fmax) / float64(mels)
-	//originalLength := filtersize * mels
+	filterbin := hz_to_mel(mel_fmax) / float64(mels)
 	stride := len(melspectrum) / mels
 
 	for j := 0; j < len(melspectrum)/mels; j++ {
-
 		for i := 0; i < filtersize; i++ {
-
 			vallo := float64(hz_to_mel((float64(i)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
 			valhi := float64(hz_to_mel((float64(i+1)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
 
-			var inlo, _ = math.Modf(vallo)
-			var inhi = math.Floor(valhi)
+			inlo, modlo := math.Modf(vallo)
+			inhi := math.Floor(valhi)
 			if inlo < 0 {
-				inlo, inhi = 0, 0
+				inlo, modlo, inhi = 0, 0, 0
 			}
+
 			var tot [2]float64
 			for l := 0; l < 2; l++ {
 				var total float64
@@ -323,15 +335,13 @@ func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax 
 				if int(inlo) == int(inhi) {
 					total += melspectrum[j+stride*int(inlo)][l]
 				} else if int(inlo)+1 == int(inhi) && int(inhi) < mels {
-					total += melspectrum[j+stride*int(inlo)][l] / 2
-					total += melspectrum[j+stride*int(inhi)][l] / 2
+					total += melspectrum[j+stride*int(inlo)][l] * (1 - modlo)
+					total += melspectrum[j+stride*int(inhi)][l] * modlo
 				} else {
-
 					for k := int(inlo); k < int(inhi); k++ {
-						var sample = melspectrum[j+stride*k][l]
-						sample /= inhi - inlo
-						total += sample
+						total += melspectrum[j+stride*k][l]
 					}
+					total /= inhi - inlo + 1
 				}
 
 				tot[l] = total
