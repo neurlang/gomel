@@ -5,7 +5,8 @@ import "github.com/mjibson/go-dsp/fft"
 import "math"
 import "errors"
 import "math/cmplx"
-import "math/rand"
+
+//import "math/rand"
 
 // Mel represents the configuration for generating mel spectrograms.
 type Mel struct {
@@ -43,27 +44,35 @@ func NewMel() *Mel {
 var ErrFileNotLoaded = errors.New("wavNotLoaded")
 
 // ToMel generates a mel spectrogram from a wave buffer and returns the mel buffer.
-func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
+func (m *Mel) ToMel(buf []float64) ([][3]float64, error) {
 
 	buf = pad(buf, m.Window)
 
 	stft := stft.New(m.Window, m.Resolut)
 
 	spectrum := stft.STFT(buf)
-
-	var ospectrum [][2]float64
+	var ospectrum [][3]float64
 	for i := range spectrum {
 		for j := 0; j < m.Resolut/2; j++ {
 
 			var v0 = spectrum[i][j]
-
-			var realn0 = math.Sqrt(real(v0)*real(v0)+imag(v0)*imag(v0))*float64(m.TuneMul) + m.TuneAdd
-
 			var v1 = spectrum[i][m.Resolut-j-1]
 
-			var realn1 = math.Sqrt(real(v1)*real(v1)+imag(v1)*imag(v1))*float64(m.TuneMul) + m.TuneAdd
+			var realn0 = cmplx.Abs(v0)
+			var realn1 = cmplx.Abs(v1)
+			// Compute phases
+			theta0 := cmplx.Phase(v0)
+			theta1 := cmplx.Phase(v1)
 
-			ospectrum = append(ospectrum, [2]float64{realn0, realn1})
+			// Compute phase difference
+			phaseDiff := math.Atan2(math.Sin(theta1-theta0), math.Cos(theta1-theta0))
+
+			encodedPhase := theta0 + phaseDiff
+			if encodedPhase < 0 {
+				encodedPhase += 2 * math.Pi
+			}
+
+			ospectrum = append(ospectrum, [3]float64{realn0, realn1, encodedPhase})
 
 		}
 	}
@@ -82,15 +91,6 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 	numFrames := len(spectrogram)
 	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*frameShift)
 	windowSum := make([]float64, frameLen+(numFrames-1)*frameShift)
-
-	// Initial reconstruction with a random phase
-	for i := 0; i < numFrames; i++ {
-		for j := range spectrogram[i] {
-			magnitude0 := cmplx.Abs(spectrogram[i][j])
-			phase := 2 * math.Pi * rand.Float64()
-			spectrogram[i][j] = cmplx.Rect(magnitude0, phase)
-		}
-	}
 
 	// Griffin-Lim iterations
 	for iter := 0; iter < numIterations; iter++ {
@@ -137,7 +137,7 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 }
 
 // FromMel generates a wave buffer from a mel spectrogram and returns the wave buffer.
-func (m *Mel) FromMel(ospectrum [][2]float64) ([]float64, error) {
+func (m *Mel) FromMel(ospectrum [][3]float64) ([]float64, error) {
 	spectral_denormalize(ospectrum)
 
 	stft1 := stft.New(m.Window, m.Resolut)
@@ -164,7 +164,7 @@ func SaveWav(outputFile string, vec []float64, sr int) error {
 	return dumpwav(outputFile, vec, sr)
 }
 
-func (m *Mel) Image(buf [][2]float64) []uint16 {
+func (m *Mel) Image(buf [][3]float64) []uint16 {
 	return dumpbuffer(buf, m.NumMels)
 }
 

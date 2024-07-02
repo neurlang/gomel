@@ -27,13 +27,13 @@ func main() {
 	var m = mel.NewMel()
 
 	// Set parameters
-	m.NumMels = 160
+	m.NumMels = 512
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
 	m.Window = 256
 	m.Resolut = 8192
-	m.GriffinLimIterations = 20
+	m.GriffinLimIterations = 2
 	m.VolumeBoost = 0.0
 
 	m.SampleRate = frequency

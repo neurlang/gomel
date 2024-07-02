@@ -21,7 +21,7 @@ func main() {
 	var m = mel.NewMel()
 
 	// Set parameters
-	m.NumMels = 160
+	m.NumMels = 512
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
