@@ -48,12 +48,12 @@ func unpackBytesToFloat64(bytes []byte) float64 {
 	return f
 }
 
-func loadpng(name string, reverse bool) (buf [][2]float64) {
+func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
 		println(err.Error())
-		return nil
+		return nil, 0, 0
 	}
 	defer file.Close()
 
@@ -61,7 +61,7 @@ func loadpng(name string, reverse bool) (buf [][2]float64) {
 	img, err := png.Decode(file)
 	if err != nil {
 		println(err.Error())
-		return nil
+		return nil, 0, 0
 	}
 
 	// Get the bounds of the image
@@ -80,7 +80,7 @@ func loadpng(name string, reverse bool) (buf [][2]float64) {
 			}
 			r, g, b, _ := color.RGBA()
 
-			if x == 0 && y < 16 {
+			if x == 0 && y < 32 {
 				floats = append(floats, byte(b>>8))
 			}
 
@@ -92,12 +92,19 @@ func loadpng(name string, reverse bool) (buf [][2]float64) {
 			buf = append(buf, val)
 		}
 	}
-	var mgc_max, mgc_min = unpackBytesToFloat64(floats[0:8]), unpackBytesToFloat64(floats[8:16])
+	var mgc_max, mgc_min, samples_in_mel, sr = unpackBytesToFloat64(floats[0:8]), unpackBytesToFloat64(floats[8:16]), unpackBytesToFloat64(floats[16:24]), unpackBytesToFloat64(floats[24:32])
+
+	if mgc_max == samples_in_mel {
+		samples_in_mel = 0
+	}
 
 	for i := range buf {
 		buf[i][0] = (buf[i][0]*(mgc_max-mgc_min) + mgc_min)
 		buf[i][1] = (buf[i][1]*(mgc_max-mgc_min) + mgc_min)
 	}
+
+	samples = samples_in_mel * float64(bounds.Max.X-bounds.Min.X)
+	samplerate = sr
 	//dumpimage("test.png", buf, 160, reverse)
 	return
 }
@@ -109,7 +116,7 @@ func packFloat64ToBytes(f float64) []byte {
 	return bytes
 }
 
-func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
+func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in_mel, sr float64) error {
 
 	f, err := os.Create(name)
 	if err != nil {
@@ -135,7 +142,9 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 			}
 		}
 	}
-	floats := append(packFloat64ToBytes(mgc_max), packFloat64ToBytes(mgc_min)...)
+	floats := append(
+		append(packFloat64ToBytes(mgc_max), packFloat64ToBytes(mgc_min)...),
+		append(packFloat64ToBytes(samples_in_mel), packFloat64ToBytes(sr)...)...)
 	//println(mgc_max, mgc_min)
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
@@ -145,11 +154,7 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			if x == 0 {
-				col.B = uint8(int(floats[y&15]))
-			} else {
-				col.B = 0
-			}
+			col.B = uint8(int(floats[y&31]))
 			col.A = uint8(255)
 			if reverse {
 				img.SetNRGBA(x, mels-y-1, col)
@@ -210,20 +215,22 @@ func dumpwav(name string, data []float64, sr int) error {
 	return nil
 }
 
-func loadwav(name string) (out []float64) {
+func loadwav(name string) (out []float64, sr float64) {
 	file, _ := os.Open(name)
 	defer file.Close()
 
 	// wavReader
-	stream, _, err := wav.Decode(file)
+	stream, format, err := wav.Decode(file)
 	if err != nil {
 		println(err.Error())
-		return nil
+		return nil, 0
 	}
+
+	sr = float64(format.SampleRate)
 
 	// require wavReader
 	if stream == nil {
-		return nil
+		return nil, 0
 	}
 	var samples = make([][2]float64, 0, 1)
 	for {
@@ -240,14 +247,17 @@ func loadwav(name string) (out []float64) {
 	return
 }
 
-func loadflac(name string) (out []float64) {
-	// Open love.flac for audio streaming without parsing metadata.
+func loadflac(name string) (out []float64, sr float64) {
 	stream, err := flac.Open(name)
 	if err != nil {
 		println(err.Error())
-		return nil
+		return nil, 0
 	}
 	defer stream.Close()
+
+	// Iterate over the metadata blocks to find the StreamInfo block
+	var sampleRate = stream.Info.SampleRate
+	sr = float64(sampleRate)
 
 	for {
 		// Parse one frame of audio samples at the time, each frame containing one
@@ -427,4 +437,28 @@ func pad(buf []float64, filter int) []float64 {
 	}
 
 	return buf
+}
+
+func isPadded(originalLen, paddedLen, filter int) bool {
+	// Calculate the minimum target size
+	minTargetSize := 15 * filter
+
+	if originalLen >= minTargetSize {
+		// Calculate the remainder
+		remainder := (originalLen - minTargetSize) % filter
+		if remainder != 0 {
+			// Calculate the required padding length
+			padLen := filter - remainder - 1
+			// Check if the padded length matches the expected padded length
+			return paddedLen == originalLen+padLen
+		} else {
+			// No padding needed if remainder is zero
+			return paddedLen == originalLen
+		}
+	} else {
+		// Calculate the required padding length
+		padLen := minTargetSize - originalLen - 1
+		// Check if the padded length matches the expected padded length
+		return paddedLen == originalLen+padLen
+	}
 }

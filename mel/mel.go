@@ -140,12 +140,14 @@ func (m *Mel) FromMel(ospectrum [][2]float64) ([]float64, error) {
 
 // LoadFlac loads mono flac file to sample vector
 func LoadFlac(inputFile string) []float64 {
-	return loadflac(inputFile)
+	mono, _ := loadflac(inputFile)
+	return mono
 }
 
 // LoadWav loads mono wav file to sample vector
 func LoadWav(inputFile string) []float64 {
-	return loadwav(inputFile)
+	mono, _ := loadwav(inputFile)
+	return mono
 }
 
 // SaveWav saves mono wav file from sample vector
@@ -160,7 +162,7 @@ func (m *Mel) Image(buf [][2]float64) []uint16 {
 // ToMel generates a mel spectrogram from an input FLAC audio file and saves it as a PNG image.
 func (m *Mel) ToMelFlac(inputFile, outputFile string) error {
 
-	var buf = loadflac(inputFile)
+	var buf, sr = loadflac(inputFile)
 	if len(buf) == 0 {
 		return ErrFileNotLoaded
 	}
@@ -170,7 +172,7 @@ func (m *Mel) ToMelFlac(inputFile, outputFile string) error {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse)
+	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse, float64(len(buf)*m.NumMels)/float64(len(ospectrum)), float64(sr))
 
 	return nil
 }
@@ -178,7 +180,7 @@ func (m *Mel) ToMelFlac(inputFile, outputFile string) error {
 // ToMel generates a mel spectrogram from an input WAV audio file and saves it as a PNG image.
 func (m *Mel) ToMelWav(inputFile, outputFile string) error {
 
-	var buf = loadwav(inputFile)
+	var buf, sr = loadwav(inputFile)
 	if len(buf) == 0 {
 		return ErrFileNotLoaded
 	}
@@ -188,14 +190,14 @@ func (m *Mel) ToMelWav(inputFile, outputFile string) error {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse)
+	dumpimage(outputFile, ospectrum, m.NumMels, m.YReverse, float64(len(buf)*m.NumMels)/float64(len(ospectrum)), float64(sr))
 
 	return nil
 }
 
 func (m *Mel) ToWavPng(inputFile, outputFile string) error {
 
-	var buf = loadpng(inputFile, m.YReverse)
+	var buf, samples, samplerate = loadpng(inputFile, m.YReverse)
 	if len(buf) == 0 {
 		return ErrFileNotLoaded
 	}
@@ -208,6 +210,13 @@ func (m *Mel) ToWavPng(inputFile, outputFile string) error {
 	owave, err := m.FromMel(buf)
 	if err != nil {
 		return err
+	}
+
+	if int(samples) > 0 && isPadded(int(samples), len(owave), m.Window) && len(owave) > int(samples) {
+		owave = owave[0:int(samples)]
+	}
+	if samplerate != 0 && m.SampleRate == 0 {
+		m.SampleRate = int(samplerate)
 	}
 
 	dumpwav(outputFile, owave, m.SampleRate)
