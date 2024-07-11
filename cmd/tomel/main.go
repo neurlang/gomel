@@ -21,12 +21,12 @@ func main() {
 	var m = mel.NewMel()
 
 	// Set parameters
-	m.NumMels = 512
+	m.NumMels = 1024
 	m.MelFmin = 0
 	m.MelFmax = 8000
 	m.YReverse = true
-	m.Window = 256
-	m.Resolut = 8192
+	m.Window = 1024
+	m.Resolut = 10240
 
 	if strings.HasSuffix(filename, ".flac") {
 		// Generate the mel spectrogram and save it as a PNG file

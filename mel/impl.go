@@ -12,7 +12,7 @@ import "math"
 import "math/cmplx"
 import "encoding/binary"
 
-func dumpbuffer(buf [][3]float64, mels int) (out []uint16) {
+func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	stride := len(buf) / mels
 
 	var mgc_max, mgc_min = [2]float64{(-99999999.), (-99999999.)}, [2]float64{(9999999.), (9999999.)}
@@ -48,7 +48,7 @@ func unpackBytesToFloat64(bytes []byte) float64 {
 	return f
 }
 
-func loadpng(name string, reverse bool) (buf [][3]float64) {
+func loadpng(name string, reverse bool) (buf [][2]float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
@@ -86,9 +86,8 @@ func loadpng(name string, reverse bool) (buf [][3]float64) {
 
 			val0 := float64(r>>8) / 255
 			val1 := float64(g>>8) / 255
-			val2 := float64(b>>8) / 40
 
-			val := [3]float64{val0, val1, val2}
+			val := [2]float64{val0, val1}
 
 			buf = append(buf, val)
 		}
@@ -110,7 +109,7 @@ func packFloat64ToBytes(f float64) []byte {
 	return bytes
 }
 
-func dumpimage(name string, buf [][3]float64, mels int, reverse bool) error {
+func dumpimage(name string, buf [][2]float64, mels int, reverse bool) error {
 
 	f, err := os.Create(name)
 	if err != nil {
@@ -143,13 +142,13 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool) error {
 			var col color.NRGBA
 			val0 := (buf[stride*y+x][0] - mgc_min) / (mgc_max - mgc_min)
 			val1 := (buf[stride*y+x][1] - mgc_min) / (mgc_max - mgc_min)
-			val2 := buf[stride*y+x][2]
+
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
 			if x == 0 {
 				col.B = uint8(int(floats[y&15]))
 			} else {
-				col.B = uint8(int(40 * val2))
+				col.B = 0
 			}
 			col.A = uint8(255)
 			if reverse {
@@ -282,7 +281,7 @@ func hz_to_mel(value float64) float64 {
 	return _MEL_HIGH_FREQUENCY_Q * math.Log(1.0+(value/_MEL_BREAK_FREQUENCY_HERTZ))
 }
 
-func domel(filtersize, mels int, spectrum [][3]float64, mel_fmin, mel_fmax float64) (melspectrum [][3]float64) {
+func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float64) (melspectrum [][2]float64) {
 	melbin := hz_to_mel(mel_fmax) / float64(mels)
 
 	for i := 0; i < mels; i++ {
@@ -296,8 +295,8 @@ func domel(filtersize, mels int, spectrum [][3]float64, mel_fmin, mel_fmax float
 				inlo, modlo, inhi = 0, 0, 0
 			}
 
-			var tot [3]float64
-			for l := 0; l < 3; l++ {
+			var tot [2]float64
+			for l := 0; l < 2; l++ {
 				var total float64
 
 				if int(inlo)+1 == int(inhi) {
@@ -319,7 +318,7 @@ func domel(filtersize, mels int, spectrum [][3]float64, mel_fmin, mel_fmax float
 	return
 }
 
-func undomel(filtersize, mels int, melspectrum [][3]float64, mel_fmin, mel_fmax float64) (spectrum [][3]float64) {
+func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax float64) (spectrum [][2]float64) {
 	filterbin := hz_to_mel(mel_fmax) / float64(mels)
 	stride := len(melspectrum) / mels
 
@@ -334,8 +333,8 @@ func undomel(filtersize, mels int, melspectrum [][3]float64, mel_fmin, mel_fmax 
 				inlo, modlo, inhi = 0, 0, 0
 			}
 
-			var tot [3]float64
-			for l := 0; l < 3; l++ {
+			var tot [2]float64
+			for l := 0; l < 2; l++ {
 				var total float64
 
 				if int(inlo) == int(inhi) {
@@ -359,7 +358,7 @@ func undomel(filtersize, mels int, melspectrum [][3]float64, mel_fmin, mel_fmax 
 	return
 }
 
-func (m *Mel) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
+func (m *Mel) undospectrum(ospectrum [][2]float64) (spectrum [][]complex128) {
 	spectrum = make([][]complex128, len(ospectrum)/(m.Resolut/2))
 
 	for i := range spectrum {
@@ -368,21 +367,12 @@ func (m *Mel) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
 			index := i*(m.Resolut/2) + j
 			realn0 := ospectrum[index][0]
 			realn1 := ospectrum[index][1]
-			realn2 := ospectrum[index][2]
 
 			real0 := (realn0 - m.TuneAdd) / m.TuneMul
 			real1 := (realn1 - m.TuneAdd) / m.TuneMul
-			combinedPhase := (realn2 - m.TuneAdd) / m.TuneMul
 
-			if combinedPhase > math.Pi {
-				combinedPhase -= 2 * math.Pi
-			}
-
-			theta0 := combinedPhase - math.Atan2(math.Sin(combinedPhase), math.Cos(combinedPhase))
-			theta1 := combinedPhase
-
-			v0 := cmplx.Rect(real0, theta0)
-			v1 := cmplx.Rect(real1, theta1)
+			v0 := cmplx.Rect(real0, 0)
+			v1 := cmplx.Rect(real1, 0)
 
 			spectrum[i][j] = v0
 			spectrum[i][m.Resolut-j-1] = v1
@@ -392,7 +382,7 @@ func (m *Mel) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
 	return
 }
 
-func spectral_normalize(buf [][3]float64) {
+func spectral_normalize(buf [][2]float64) {
 	for l := 0; l < 2; l++ {
 		for i := range buf {
 			if buf[i][l] < 1e-5 {
@@ -403,7 +393,7 @@ func spectral_normalize(buf [][3]float64) {
 	}
 }
 
-func spectral_denormalize(buf [][3]float64) {
+func spectral_denormalize(buf [][2]float64) {
 	for l := 0; l < 2; l++ {
 		for i := range buf {
 			buf[i][l] = float64(math.Exp(float64(buf[i][l])))
