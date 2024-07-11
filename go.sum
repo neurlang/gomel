@@ -30,6 +30,8 @@ github.com/r9y9/go-dsp v0.0.0-20140323125827-6ccdfeca7723 h1:ayBl8IZH8eWYtuFsRXH
 github.com/r9y9/go-dsp v0.0.0-20140323125827-6ccdfeca7723/go.mod h1:jX0wm5h0OepCRriD/3CGtsWd6PfILibNpvRhXgCYSyU=
 github.com/r9y9/gossp v0.0.1 h1:G/aBnndFXkn4ILXAvBMwlvJt8sBjdLy05VGktBf8bc0=
 github.com/r9y9/gossp v0.0.1/go.mod h1:34aoHwIJFYI89DdjTHfplSkRIk1XTAMzTELRGEOfMg8=
+github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
+github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 golang.org/x/exp v0.0.0-20190306152737-a1d7652674e8/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
 golang.org/x/image v0.0.0-20190220214146-31aff87c08e9/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
 golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=

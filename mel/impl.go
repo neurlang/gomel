@@ -8,6 +8,7 @@ import "image/color"
 import "github.com/faiface/beep"
 import "github.com/faiface/beep/wav"
 import "github.com/mewkiz/flac"
+import "github.com/x448/float16"
 import "math"
 import "math/cmplx"
 import "encoding/binary"
@@ -43,8 +44,8 @@ func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 }
 
 func unpackBytesToFloat64(bytes []byte) float64 {
-	bits := binary.LittleEndian.Uint64(bytes) // Read the bits from the byte slice
-	f := math.Float64frombits(bits)           // Convert uint64 bits to float64
+	bits := binary.LittleEndian.Uint16(bytes)      // Read the bits from the byte slice
+	f := float64(float16.Frombits(bits).Float32()) // Convert uint64 bits to float64
 	return f
 }
 
@@ -92,7 +93,10 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 			buf = append(buf, val)
 		}
 	}
-	var mgc_max, mgc_min, samples_in_mel, sr = unpackBytesToFloat64(floats[0:8]), unpackBytesToFloat64(floats[8:16]), unpackBytesToFloat64(floats[16:24]), unpackBytesToFloat64(floats[24:32])
+	var mgc_max, mgc_min, samples_in_mel, sr = unpackBytesToFloat64(floats[0:2]),
+		unpackBytesToFloat64(floats[2:4]),
+		unpackBytesToFloat64(floats[4:6]),
+		unpackBytesToFloat64(floats[6:8])
 
 	if mgc_max == samples_in_mel {
 		samples_in_mel = 0
@@ -109,11 +113,11 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 	return
 }
 
-func packFloat64ToBytes(f float64) []byte {
-	bits := math.Float64bits(f)                // Convert float64 to uint64
-	bytes := make([]byte, 8)                   // Create a byte slice of size 8
-	binary.LittleEndian.PutUint64(bytes, bits) // Write the bits to the byte slice in little-endian order
-	return bytes
+func packFloat16ToBytes(f float64) []byte {
+	var buf [2]byte
+	bits := float16.Fromfloat32(float32(f)).Bits()
+	binary.LittleEndian.PutUint16(buf[:], bits)
+	return buf[:]
 }
 
 func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in_mel, sr float64) error {
@@ -143,8 +147,8 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in
 		}
 	}
 	floats := append(
-		append(packFloat64ToBytes(mgc_max), packFloat64ToBytes(mgc_min)...),
-		append(packFloat64ToBytes(samples_in_mel), packFloat64ToBytes(sr)...)...)
+		append(packFloat16ToBytes(mgc_max), packFloat16ToBytes(mgc_min)...),
+		append(packFloat16ToBytes(samples_in_mel), packFloat16ToBytes(sr)...)...)
 	//println(mgc_max, mgc_min)
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
@@ -154,7 +158,7 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in
 
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			col.B = uint8(int(floats[y&31]))
+			col.B = uint8(int(floats[y&7]))
 			col.A = uint8(255)
 			if reverse {
 				img.SetNRGBA(x, mels-y-1, col)
