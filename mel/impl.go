@@ -31,10 +31,10 @@ func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 			}
 		}
 	}
-	for y := 0; y < mels; y++ {
-		for x := 0; x < stride; x++ {
-			val0 := (buf[stride*y+x][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
-			val1 := (buf[stride*y+x][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
+	for x := 0; x < stride; x++ {
+		for y := 0; y < mels; y++ {
+			val0 := (buf[y+x*mels][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
+			val1 := (buf[y+x*mels][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
 			val := uint16(int(255*val0)) | uint16(int(255*val1))<<8
 
 			out = append(out, val)
@@ -68,8 +68,8 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 	// Get the bounds of the image
 	bounds := img.Bounds()
 	var floats []byte
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+	for x := bounds.Min.X; x < bounds.Max.X; x++ {
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 
 			var color color.Color
 			if reverse {
@@ -153,8 +153,8 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
 			var col color.NRGBA
-			val0 := (buf[stride*y+x][0] - mgc_min) / (mgc_max - mgc_min)
-			val1 := (buf[stride*y+x][1] - mgc_min) / (mgc_max - mgc_min)
+			val0 := (buf[y+x*mels][0] - mgc_min) / (mgc_max - mgc_min)
+			val1 := (buf[y+x*mels][1] - mgc_min) / (mgc_max - mgc_min)
 
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
@@ -298,8 +298,8 @@ func hz_to_mel(value float64) float64 {
 func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float64) (melspectrum [][2]float64) {
 	melbin := hz_to_mel(mel_fmax) / float64(mels)
 
-	for i := 0; i < mels; i++ {
-		for j := 0; j < len(spectrum); j += filtersize {
+	for j := 0; j < len(spectrum); j += filtersize {
+		for i := 0; i < mels; i++ {
 			vallo := float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i))) / (mel_fmax + mel_fmin)
 			valhi := float64(filtersize) * (mel_fmin + mel_to_hz(melbin*float64(i+1))) / (mel_fmax + mel_fmin)
 
@@ -334,9 +334,8 @@ func domel(filtersize, mels int, spectrum [][2]float64, mel_fmin, mel_fmax float
 
 func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax float64) (spectrum [][2]float64) {
 	filterbin := hz_to_mel(mel_fmax) / float64(mels)
-	stride := len(melspectrum) / mels
 
-	for j := 0; j < stride; j++ {
+	for j := 0; j < len(melspectrum); j += mels {
 		for i := 0; i < filtersize; i++ {
 			vallo := float64(hz_to_mel((float64(i)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
 			valhi := float64(hz_to_mel((float64(i+1)*(mel_fmax+mel_fmin)/float64(filtersize))-mel_fmin) / filterbin)
@@ -352,13 +351,13 @@ func undomel(filtersize, mels int, melspectrum [][2]float64, mel_fmin, mel_fmax 
 				var total float64
 
 				if int(inlo) == int(inhi) {
-					total += melspectrum[j+stride*int(inlo)][l]
+					total += melspectrum[j+int(inlo)][l]
 				} else if int(inlo)+1 == int(inhi) && int(inhi) < mels {
-					total += melspectrum[j+stride*int(inlo)][l] * (1 - modlo)
-					total += melspectrum[j+stride*int(inhi)][l] * modlo
+					total += melspectrum[j+int(inlo)][l] * (1 - modlo)
+					total += melspectrum[j+int(inhi)][l] * modlo
 				} else {
 					for k := int(inlo); k < int(inhi); k++ {
-						total += melspectrum[j+stride*k][l]
+						total += melspectrum[j+k][l]
 					}
 					total /= inhi - inlo + 1
 				}
