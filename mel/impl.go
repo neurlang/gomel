@@ -87,6 +87,7 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 
 			val0 := float64(r>>8) / 255
 			val1 := float64(g>>8) / 255
+			//val2 := float64(b>>8) / 255
 
 			val := [2]float64{val0, val1}
 
@@ -155,10 +156,15 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in
 			var col color.NRGBA
 			val0 := (buf[y+x*mels][0] - mgc_min) / (mgc_max - mgc_min)
 			val1 := (buf[y+x*mels][1] - mgc_min) / (mgc_max - mgc_min)
+			//val2 := (buf[y+x*mels][2] - mgc_min) / (mgc_max - mgc_min)
 
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			col.B = uint8(int(floats[y&7]))
+			if x == 0 {
+				col.B = uint8(int(floats[y&7]))
+			} /*else {
+				col.B = uint8(int(255 * val2))
+			}*/
 			col.A = uint8(255)
 			if reverse {
 				img.SetNRGBA(x, mels-y-1, col)
@@ -384,8 +390,8 @@ func (m *Mel) undospectrum(ospectrum [][2]float64) (spectrum [][]complex128) {
 			real0 := (realn0 - m.TuneAdd) / m.TuneMul
 			real1 := (realn1 - m.TuneAdd) / m.TuneMul
 
-			v0 := cmplx.Rect(real0, 0)
-			v1 := cmplx.Rect(real1, 0)
+			v0 := cmplx.Rect(real0, 0) // cos
+			v1 := cmplx.Rect(real1, 0) // sin
 
 			spectrum[i][j] = v0
 			spectrum[i][m.Resolut-j-1] = v1

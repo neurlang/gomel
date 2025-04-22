@@ -4,8 +4,7 @@ import "github.com/r9y9/gossp/stft"
 import "github.com/mjibson/go-dsp/fft"
 import "errors"
 import "math/cmplx"
-
-//import "math/rand"
+import "math/rand"
 
 // Mel represents the configuration for generating mel spectrograms.
 type Mel struct {
@@ -55,8 +54,8 @@ func (m *Mel) ToMel(buf []float64) ([][2]float64, error) {
 	for i := range spectrum {
 		for j := 0; j < m.Resolut/2; j++ {
 
-			var v0 = spectrum[i][j]
-			var v1 = spectrum[i][m.Resolut-j-1]
+			var v0 = spectrum[i][j]             // cos
+			var v1 = spectrum[i][m.Resolut-j-1] // sin
 
 			var realn0 = cmplx.Abs(v0)
 			var realn1 = cmplx.Abs(v1)
@@ -79,47 +78,61 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 	frameLen := len(spectrogram[0])
 	numFrames := len(spectrogram)
 	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*frameShift)
-	windowSum := make([]float64, frameLen+(numFrames-1)*frameShift)
+	for i := range reconstructedSignal {
+		reconstructedSignal[i] = rand.Float64()
+	}
 
-	// Griffin-Lim iterations
 	for iter := 0; iter < numIterations; iter++ {
-		// Calculate the STFT of the reconstructed signal
+		// Phase Update Step
 		for i := 0; i < numFrames; i++ {
 			frame := make([]float64, frameLen)
 			for j := 0; j < frameLen; j++ {
-				if i*frameShift+j < len(reconstructedSignal) {
-					frame[j] = reconstructedSignal[i*frameShift+j] * s.Window[j]
+				pos := i*frameShift + j
+				if pos < len(reconstructedSignal) {
+					frame[j] = reconstructedSignal[pos] * s.Window[j]
 				}
 			}
 			stftFrame := fft.FFTReal(frame)
 
-			// Update the phase of the spectrogram with the phase of the current STFT
-			for j := range stftFrame {
+			// Update phase of the spectrogram
+			for j := range spectrogram[i] {
 				magnitude := cmplx.Abs(spectrogram[i][j])
 				phase := cmplx.Phase(stftFrame[j])
 				spectrogram[i][j] = cmplx.Rect(magnitude, phase)
 			}
+
+			// Enforce conjugate symmetry for real signals
+			for j := 1; j < frameLen/2; j++ {
+				conjugateIdx := frameLen - j
+				spectrogram[i][conjugateIdx] = cmplx.Conj(spectrogram[i][j])
+			}
 		}
 
-		// Reconstruct the signal from the updated spectrogram
-		reconstructedSignal = make([]float64, frameLen+(numFrames-1)*frameShift)
-		windowSum = make([]float64, frameLen+(numFrames-1)*frameShift)
+		// ISTFT Step with new buffer and normalization
+		newReconstructed := make([]float64, frameLen+(numFrames-1)*frameShift)
+		//windowSum := make([]float64, len(newReconstructed))
+
 		for i := 0; i < numFrames; i++ {
 			buf := fft.IFFT(spectrogram[i])
-			index := 0
-			for t := i * frameShift; t < i*frameShift+frameLen; t++ {
-				reconstructedSignal[t] += real(buf[index]) * s.Window[index]
-				windowSum[t] += s.Window[index]
-				index++
+			for j := 0; j < frameLen; j++ {
+				pos := i*frameShift + j
+				if pos < len(newReconstructed) {
+					val := real(buf[j]) * s.Window[j]
+					newReconstructed[pos] += val
+					//windowSum[pos] += s.Window[j] * s.Window[j] // Sum of squares
+				}
 			}
 		}
 
-		// Normalize reconstructed signal by window sum
-		for i := range reconstructedSignal {
-			if windowSum[i] != 0 {
-				reconstructedSignal[i] /= windowSum[i]
-			}
-		}
+		// Normalize by sum of squared windows
+		//for i := range newReconstructed {
+		//    if windowSum[i] > 1e-12 { // Avoid division by zero
+		//        newReconstructed[i] /= windowSum[i]
+		//    }
+		//}
+
+		// Update reconstructedSignal for next iteration
+		reconstructedSignal = newReconstructed
 	}
 
 	return reconstructedSignal
