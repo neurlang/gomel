@@ -6,20 +6,22 @@ import "errors"
 
 // Phase represents the configuration for generating phase-preserving spectrograms.
 type Phase struct {
-	NumFreqs  int
+	NumFreqs int
 	Window   int
 	Resolut  int
 	YReverse bool
 	// sample rate for output wav
-	SampleRate int
+	SampleRate  int
+	VolumeBoost float64
 }
 
 // NewPhase creates a new Phase instance with default values.
 func NewPhase() *Phase {
 	return &Phase{
-		NumFreqs:              768,
-		Window:               1280,
-		Resolut:              4096,
+		NumFreqs:    768,
+		Window:      1280,
+		Resolut:     4096,
+		VolumeBoost: 0,
 	}
 }
 
@@ -42,7 +44,7 @@ func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
 			var v1 = spectrum[i][m.Resolut-j-1]
 
 			var realn1 = imag(v0)
-			
+
 			var realm0 = real(v1)
 			var realm1 = imag(v1)
 
@@ -57,8 +59,6 @@ func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
 	return ospectrum, nil
 
 }
-
-
 
 func (m *Phase) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
 	spectrum = make([][]complex128, len(ospectrum)/(m.Resolut/2))
@@ -107,13 +107,18 @@ func (m *Phase) FromPhase(ospectrum [][3]float64) ([]float64, error) {
 
 	stft1 := stft.New(m.Window, m.Resolut)
 
-
 	spectral_denormalize(ospectrum)
 	ospectrum = grow(ospectrum, m.NumFreqs, m.Resolut/2)
 
 	undo := m.undospectrum(ospectrum)
 
 	buf1 := ISTFT(stft1, undo, 0)
+
+	if m.VolumeBoost != 0 {
+		for i := range buf1 {
+			buf1[i] *= m.VolumeBoost
+		}
+	}
 
 	return buf1, nil
 }
