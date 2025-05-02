@@ -87,25 +87,16 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 	numFrames := len(spectrogram)
 	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*frameShift)
 
-	for iter := 0; iter < numIterations; iter++ {
-
-		// ISTFT Step with new buffer
-		newReconstructed := make([]float64, frameLen+(numFrames-1)*frameShift)
-		//windowSum := make([]float64, len(newReconstructed))
-
-		for i := 0; i < numFrames; i++ {
-			buf := fft.IFFT(spectrogram[i])
-			for j := 0; j < frameLen; j++ {
-				pos := i*frameShift + j
-				if pos < len(newReconstructed) {
-					val := real(buf[j]) * s.Window[j]
-					newReconstructed[pos] += val
-				}
+	for i := 0; i < numFrames; i++ {
+		buf := fft.IFFT(spectrogram[i])
+		for j := 0; j < frameLen; j++ {
+			pos := i*frameShift + j
+			if pos < len(reconstructedSignal) {
+				val := real(buf[j]) * s.Window[j]
+				reconstructedSignal[pos] += val
+				//windowSum[pos] += s.Window[j] * s.Window[j] // Sum of squares
 			}
 		}
-
-		// Update reconstructedSignal for next iteration
-		reconstructedSignal = newReconstructed
 	}
 
 	return reconstructedSignal
@@ -122,7 +113,7 @@ func (m *Phase) FromPhase(ospectrum [][3]float64) ([]float64, error) {
 
 	undo := m.undospectrum(ospectrum)
 
-	buf1 := ISTFT(stft1, undo, 1)
+	buf1 := ISTFT(stft1, undo, 0)
 
 	return buf1, nil
 }
