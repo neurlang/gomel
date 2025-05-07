@@ -135,6 +135,24 @@ func LoadWav(inputFile string) []float64 {
 	return mono
 }
 
+// LoadFlacSampleRate loads mono flac file to sample vector and it's sample rate, or it returns an error like ErrFileNotLoaded
+func LoadFlacSampleRate(inputFile string) ([]float64, uint32, error) {
+	mono, sr := loadflac(inputFile)
+	if len(mono) == 0 || sr == 0 {
+		return nil, 0, ErrFileNotLoaded
+	}
+	return mono, uint32(sr), nil
+}
+
+// LoadWavSampleRate loads mono wav file to sample vector and it's sample rate, or it returns an error like ErrFileNotLoaded
+func LoadWavSampleRate(inputFile string) ([]float64, uint32, error) {
+	mono, sr := loadwav(inputFile)
+	if len(mono) == 0 || sr == 0 {
+		return nil, 0, ErrFileNotLoaded
+	}
+	return mono, uint32(sr), nil
+}
+
 // SaveWav saves mono wav file from sample vector
 func SaveWav(outputFile string, vec []float64, sr int) error {
 	return dumpwav(outputFile, vec, sr)
