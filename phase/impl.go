@@ -93,8 +93,7 @@ func loadpng(name string, reverse bool) (buf [][3]float64, samples, samplerate f
 			buf = append(buf, val)
 		}
 	}
-	var mgc_max0, mgc_max1, mgc_max2, mgc_min0, mgc_min1, mgc_min2, samples_in_mel, sr =
-		unpackBytesToFloat64(floats[0:2]),
+	var mgc_max0, mgc_max1, mgc_max2, mgc_min0, mgc_min1, mgc_min2, samples_in_mel, sr = unpackBytesToFloat64(floats[0:2]),
 		unpackBytesToFloat64(floats[2:4]),
 		unpackBytesToFloat64(floats[4:6]),
 		unpackBytesToFloat64(floats[6:8]),
@@ -139,7 +138,7 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 
 	img := image.NewNRGBA(image.Rect(0, 0, stride, mels))
 
-	var mgc_max, mgc_min = [3]float64{(-math.MaxFloat64),(-math.MaxFloat64),(-math.MaxFloat64)}, [3]float64{(math.MaxFloat64),(math.MaxFloat64),(math.MaxFloat64)}
+	var mgc_max, mgc_min = [3]float64{(-math.MaxFloat64), (-math.MaxFloat64), (-math.MaxFloat64)}, [3]float64{(math.MaxFloat64), (math.MaxFloat64), (math.MaxFloat64)}
 
 	for x := 0; x < stride; x++ {
 		for l := 0; l < 3; l++ {
@@ -317,16 +316,14 @@ func grow(ospectrum [][3]float64, imels, omels int) (out [][3]float64) {
 	for i := range ospectrum {
 		j := i % imels
 		out = append(out, ospectrum[i])
-		if j + 1 == imels {
-			for k := imels ; k < omels; k++ {
+		if j+1 == imels {
+			for k := imels; k < omels; k++ {
 				out = append(out, ospectrum[i])
 			}
 		}
 	}
 	return
 }
-
-
 
 func spectral_normalize(buf [][3]float64) {
 	for l := 0; l < 3; l++ {
