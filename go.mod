@@ -1,6 +1,6 @@
 module github.com/neurlang/gomel
 
-go 1.13
+go 1.0
 
 require (
 	github.com/faiface/beep v1.1.0
