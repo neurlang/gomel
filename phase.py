@@ -165,12 +165,13 @@ class Phase:
                 spectrum[j + 1, i] = v0
                 spectrum[self.resolut - j - 1, i] = v1
         
-        # Subtask 6.3: Implement ISTFT matching Go's custom ISTFT (no window normalization)
+        # Subtask 6.3: Implement ISTFT with proper window normalization
         hop_size = self.window  # FrameShift
         frame_len = self.resolut  # FrameLen
         
         output_len = frame_len + (time_frames - 1) * hop_size
         audio = np.zeros(output_len, dtype=np.float64)
+        window_sum = np.zeros(output_len, dtype=np.float64)
         
         hann_window = np.hanning(frame_len)
         
@@ -181,8 +182,19 @@ class Phase:
             start = i * hop_size
             for j in range(frame_len):
                 pos = start + j
-                if pos < len(audio):
+                if pos < output_len:
                     audio[pos] += np.real(time_domain[j]) * hann_window[j]
+                    window_sum[pos] += hann_window[j] * hann_window[j]
+        
+        # Normalize by window sum (matching gossp library ISTFT)
+        # Zero out edges where window overlap is insufficient to avoid spikes
+        stable_threshold = window_sum.max() * 0.5
+        for n in range(output_len):
+            if window_sum[n] > stable_threshold:
+                audio[n] /= window_sum[n]
+            elif window_sum[n] > 1e-21:
+                # Fade: scale down proportionally in transition zones
+                audio[n] = audio[n] / window_sum[n] * (window_sum[n] / stable_threshold)
         
         # Subtask 6.4: Apply volume boost if configured
         if self.volume_boost > 0:
