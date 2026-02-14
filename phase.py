@@ -179,6 +179,87 @@ class Phase:
         
         # Return as numpy float64 array (take real part to handle numerical precision)
         return np.real(audio).astype(np.float64)
+    
+    def to_phase_wav(self, input_file, output_file):
+        """
+        Convert WAV file to PNG spectrogram.
+        
+        Args:
+            input_file: Path to input WAV file
+            output_file: Path to output PNG file
+        """
+        # Load WAV file using load_wav_with_sr()
+        audio, sample_rate = load_wav_with_sr(input_file)
+        
+        # Store original length for padding detection
+        original_length = len(audio)
+        
+        # Call to_phase() to generate spectrogram
+        spectrogram = self.to_phase(audio)
+        
+        # Calculate samples_in_mel ratio
+        # This is the ratio of original audio samples to spectrogram length
+        samples_in_mel = original_length / len(spectrogram)
+        
+        # Call save_image() with spectrogram and metadata
+        save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
+                   sample_rate, self.y_reverse)
+    
+    def to_phase_flac(self, input_file, output_file):
+        """
+        Convert FLAC file to PNG spectrogram.
+        
+        Args:
+            input_file: Path to input FLAC file
+            output_file: Path to output PNG file
+        """
+        # Load FLAC file using load_flac_with_sr()
+        audio, sample_rate = load_flac_with_sr(input_file)
+        
+        # Store original length for padding detection
+        original_length = len(audio)
+        
+        # Call to_phase() to generate spectrogram
+        spectrogram = self.to_phase(audio)
+        
+        # Calculate samples_in_mel ratio
+        # This is the ratio of original audio samples to spectrogram length
+        samples_in_mel = original_length / len(spectrogram)
+        
+        # Call save_image() with spectrogram and metadata
+        save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
+                   sample_rate, self.y_reverse)
+    
+    def to_wav_png(self, input_file, output_file):
+        """
+        Convert PNG spectrogram to WAV file.
+        
+        Args:
+            input_file: Path to input PNG file
+            output_file: Path to output WAV file
+        """
+        # Load PNG using load_image() to get spectrogram and metadata
+        spectrogram, samples_in_mel, embedded_sample_rate = load_image(input_file, self.y_reverse)
+        
+        # Call from_phase() to reconstruct audio
+        audio = self.from_phase(spectrogram)
+        
+        # Use embedded sample rate if self.sample_rate is not set
+        if self.sample_rate is not None:
+            sample_rate = self.sample_rate
+        else:
+            sample_rate = embedded_sample_rate
+        
+        # Calculate original length from samples_in_mel ratio
+        original_length = int(samples_in_mel * len(spectrogram))
+        
+        # Trim padding if original length is known using is_padded()
+        if is_padded(original_length, len(audio), self.window):
+            # Trim to original length
+            audio = audio[:original_length]
+        
+        # Call save_wav() to write output file
+        save_wav(output_file, audio, sample_rate)
 
 
 def pad(audio_buffer, window):

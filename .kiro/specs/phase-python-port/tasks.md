@@ -173,8 +173,8 @@
     - **Property 9: Metadata embedding preserves reconstruction parameters**
     - **Validates: Requirements 6.2, 6.3, 7.2, 7.3**
 
-- [ ] 8. Implement PNG image save/load functions
-  - [ ] 8.1 Implement save_image() function
+- [x] 8. Implement PNG image save/load functions
+  - [x] 8.1 Implement save_image() function
     - Calculate stride (time frames) from spectrogram length and num_freqs
     - Find max/min values per channel for normalization
     - Normalize each channel to 0-255 range
@@ -184,7 +184,7 @@
     - Save as PNG
     - _Requirements: 6.1, 6.4, 6.5_
 
-  - [ ] 8.2 Implement load_image() function
+  - [x] 8.2 Implement load_image() function
     - Load PNG with PIL
     - Extract metadata from first column blue channel
     - Decode RGB pixels to 3-channel spectrogram
@@ -201,22 +201,22 @@
     - **Property 8: Y-axis reversal is consistent**
     - **Validates: Requirements 6.4, 7.4**
 
-- [ ] 9. Implement high-level convenience methods
-  - [ ] 9.1 Implement to_phase_wav() method
+- [x] 9. Implement high-level convenience methods
+  - [x] 9.1 Implement to_phase_wav() method
     - Load WAV file using load_wav_with_sr()
     - Call to_phase() to generate spectrogram
     - Calculate samples_in_mel ratio
     - Call save_image() with spectrogram and metadata
     - _Requirements: 8.1_
 
-  - [ ] 9.2 Implement to_phase_flac() method
+  - [x] 9.2 Implement to_phase_flac() method
     - Load FLAC file using load_flac_with_sr()
     - Call to_phase() to generate spectrogram
     - Calculate samples_in_mel ratio
     - Call save_image() with spectrogram and metadata
     - _Requirements: 8.2_
 
-  - [ ] 9.3 Implement to_wav_png() method
+  - [x] 9.3 Implement to_wav_png() method
     - Load PNG using load_image() to get spectrogram and metadata
     - Call from_phase() to reconstruct audio
     - Use embedded sample rate if self.sample_rate is not set
@@ -235,5 +235,5 @@
     - **Property 10: Padding is correctly applied and removed**
     - **Validates: Requirements 2.1, 8.5**
 
-- [ ] 10. Final checkpoint - Ensure all tests pass
+- [-] 10. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
