@@ -116,6 +116,69 @@ class Phase:
         normalized = spectral_normalize(shrunken)
         
         return normalized
+    
+    def from_phase(self, spectrogram):
+        """
+        Reconstruct audio from phase-preserving spectrogram.
+        
+        Args:
+            spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+            
+        Returns:
+            1D numpy array of float64 audio samples
+        """
+        # Subtask 6.1: Apply denormalization and grow
+        # Apply spectral denormalization (exp2 transform)
+        denormalized = spectral_denormalize(spectrogram)
+        
+        # Expand from num_freqs bins to resolut/2 bins
+        grown = grow(denormalized, self.resolut, self.num_freqs)
+        
+        # Subtask 6.2: Reconstruct complex spectrum from 3-channel representation
+        num_bins = self.resolut // 2
+        time_frames = len(grown) // num_bins
+        
+        # Create full complex spectrum array with shape (resolut, time_frames)
+        spectrum = np.zeros((self.resolut, time_frames), dtype=np.complex128)
+        
+        # For each time frame and frequency bin:
+        # Reconstruct v0 = complex(realm0, realn1) and v1 = complex(realm0, realm1)
+        # Place v0 at spectrum[j+1] and v1 at spectrum[resolut-j-1]
+        for t in range(time_frames):
+            for j in range(num_bins):
+                idx = t * num_bins + j
+                realn1 = grown[idx, 0]
+                realm0 = grown[idx, 1]
+                realm1 = grown[idx, 2]
+                
+                # Reconstruct complex values
+                v0 = complex(realm0, realn1)
+                v1 = complex(realm0, realm1)
+                
+                # Place in spectrum
+                spectrum[j + 1, t] = v0
+                spectrum[self.resolut - j - 1, t] = v1
+        
+        # Subtask 6.3: Implement ISTFT computation
+        # Use scipy.signal.istft with matching parameters
+        hop_size = self.window // 4
+        noverlap = self.window - hop_size
+        
+        times, audio = signal.istft(
+            spectrum,
+            window='hann',
+            nperseg=self.window,
+            noverlap=noverlap,
+            nfft=self.resolut,
+            input_onesided=False
+        )
+        
+        # Subtask 6.4: Apply volume boost if configured
+        if self.volume_boost > 0:
+            audio = audio * self.volume_boost
+        
+        # Return as numpy float64 array (take real part to handle numerical precision)
+        return np.real(audio).astype(np.float64)
 
 
 def pad(audio_buffer, window):

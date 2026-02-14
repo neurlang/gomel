@@ -116,24 +116,24 @@
     - **Property 4: Spectrogram output has correct dimensions**
     - **Validates: Requirements 2.4, 2.6**
 
-- [ ] 6. Implement from_phase() method for spectrogram to audio conversion
-  - [ ] 6.1 Implement denormalization and grow
+- [x] 6. Implement from_phase() method for spectrogram to audio conversion
+  - [x] 6.1 Implement denormalization and grow
     - Call spectral_denormalize() to apply exp2 transform
     - Call grow() to expand to resolut/2 bins
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 6.2 Reconstruct complex spectrum from 3-channel representation
+  - [x] 6.2 Reconstruct complex spectrum from 3-channel representation
     - For each frequency bin: reconstruct v0 = complex(realm0, realn1) and v1 = complex(realm0, realm1)
     - Place v0 at spectrum[j+1] and v1 at spectrum[resolut-j-1]
     - Create full complex spectrum array
     - _Requirements: 3.3_
 
-  - [ ] 6.3 Implement ISTFT computation
+  - [x] 6.3 Implement ISTFT computation
     - Use scipy.signal.istft with matching parameters
     - Apply proper window normalization
     - _Requirements: 3.4_
 
-  - [ ] 6.4 Apply volume boost if configured
+  - [x] 6.4 Apply volume boost if configured
     - Multiply output by volume_boost if volume_boost > 0
     - Return as numpy float64 array
     - _Requirements: 3.5, 3.6_
