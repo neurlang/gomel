@@ -231,9 +231,9 @@
     - Test complete round trip: WAV → PNG → WAV
     - _Requirements: 8.1, 8.2, 8.3_
 
-  - [ ]* 9.5 Write property test for padding removal
+  - [ ] 9.5 Write property test for padding removal
     - **Property 10: Padding is correctly applied and removed**
     - **Validates: Requirements 2.1, 8.5**
 
-- [-] 10. Final checkpoint - Ensure all tests pass
+- [x] 10. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.

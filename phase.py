@@ -68,28 +68,40 @@ class Phase:
         # Subtask 5.1: Apply padding and compute STFT
         padded_audio = pad(audio_buffer, self.window)
         
-        # Compute STFT with Hann window, requesting full two-sided spectrum
-        # noverlap = window - hop_size, where hop_size = window // 4
-        hop_size = self.window // 4
-        noverlap = self.window - hop_size
+        # Compute STFT manually to match gossp behavior
+        # gossp uses frameShift = window + window // 16
+        hop_size = self.window + self.window // 16
         
-        frequencies, times, stft_result = signal.stft(
-            padded_audio,
-            window='hann',
-            nperseg=self.window,
-            noverlap=noverlap,
-            nfft=self.resolut,
-            return_onesided=False
-        )
+        # Calculate number of frames
+        num_frames = (len(padded_audio) - self.window) // hop_size + 1
+        
+        # Create Hann window
+        hann_window = np.hanning(self.window)
+        
+        # Perform STFT manually
+        stft_result = np.zeros((self.resolut, num_frames), dtype=np.complex128)
+        
+        for i in range(num_frames):
+            start = i * hop_size
+            end = start + self.window
+            
+            if end <= len(padded_audio):
+                # Extract frame and apply window
+                frame = padded_audio[start:end] * hann_window
+                
+                # Pad to resolut length
+                padded_frame = np.zeros(self.resolut)
+                padded_frame[:self.window] = frame
+                
+                # Compute FFT
+                stft_result[:, i] = np.fft.fft(padded_frame)
         
         # Subtask 5.2: Extract 3-channel phase representation from STFT
-        # stft_result now has shape (resolut, time_frames) with full spectrum
-        
         time_frames = stft_result.shape[1]
         num_bins = self.resolut // 2
         
-        # Create output array with shape (time_frames * num_bins, 3)
-        phase_repr = np.zeros((time_frames * num_bins, 3), dtype=np.float64)
+        # Create output array - Go layout is: for each time frame, append all frequency bins
+        phase_repr = []
         
         # For each time frame and frequency bin:
         # v0 = spectrum[j+1], v1 = spectrum[resolut-j-1]
@@ -103,10 +115,9 @@ class Phase:
                 realm0 = np.real(v1)
                 realm1 = np.imag(v1)
                 
-                idx = t * num_bins + j
-                phase_repr[idx, 0] = realn1
-                phase_repr[idx, 1] = realm0
-                phase_repr[idx, 2] = realm1
+                phase_repr.append([realn1, realm0, realm1])
+        
+        phase_repr = np.array(phase_repr, dtype=np.float64)
         
         # Subtask 5.3: Apply shrink and normalization
         # Shrink from resolut/2 bins to num_freqs bins
@@ -144,41 +155,53 @@ class Phase:
         # For each time frame and frequency bin:
         # Reconstruct v0 = complex(realm0, realn1) and v1 = complex(realm0, realm1)
         # Place v0 at spectrum[j+1] and v1 at spectrum[resolut-j-1]
-        for t in range(time_frames):
+        # Go layout is: for i in range(spectrum), for j in range(resolut/2)
+        # which means index = i*(resolut/2) + j where i is time frame
+        for i in range(time_frames):
             for j in range(num_bins):
-                idx = t * num_bins + j
-                realn1 = grown[idx, 0]
-                realm0 = grown[idx, 1]
-                realm1 = grown[idx, 2]
+                index = i * num_bins + j
+                realn1 = grown[index][0]
+                realm0 = grown[index][1]
+                realm1 = grown[index][2]
                 
                 # Reconstruct complex values
                 v0 = complex(realm0, realn1)
                 v1 = complex(realm0, realm1)
                 
                 # Place in spectrum
-                spectrum[j + 1, t] = v0
-                spectrum[self.resolut - j - 1, t] = v1
+                spectrum[j + 1, i] = v0
+                spectrum[self.resolut - j - 1, i] = v1
         
-        # Subtask 6.3: Implement ISTFT computation
-        # Use scipy.signal.istft with matching parameters
-        hop_size = self.window // 4
-        noverlap = self.window - hop_size
+        # Subtask 6.3: Implement ISTFT computation manually to match gossp
+        hop_size = self.window + self.window // 16
         
-        times, audio = signal.istft(
-            spectrum,
-            window='hann',
-            nperseg=self.window,
-            noverlap=noverlap,
-            nfft=self.resolut,
-            input_onesided=False
-        )
+        # Calculate output length
+        output_len = self.window + (time_frames - 1) * hop_size
+        audio = np.zeros(output_len, dtype=np.float64)
+        
+        # Create Hann window
+        hann_window = np.hanning(self.window)
+        
+        # Perform ISTFT manually
+        for i in range(time_frames):
+            # Compute IFFT
+            frame_spectrum = spectrum[:, i]
+            time_domain = np.fft.ifft(frame_spectrum)
+            
+            # Take real part and apply window
+            frame = np.real(time_domain[:self.window]) * hann_window
+            
+            # Overlap-add
+            start = i * hop_size
+            end = start + self.window
+            audio[start:end] += frame
         
         # Subtask 6.4: Apply volume boost if configured
         if self.volume_boost > 0:
             audio = audio * self.volume_boost
         
-        # Return as numpy float64 array (take real part to handle numerical precision)
-        return np.real(audio).astype(np.float64)
+        # Return as numpy float64 array
+        return audio.astype(np.float64)
     
     def to_phase_wav(self, input_file, output_file):
         """
@@ -197,9 +220,8 @@ class Phase:
         # Call to_phase() to generate spectrogram
         spectrogram = self.to_phase(audio)
         
-        # Calculate samples_in_mel ratio
-        # This is the ratio of original audio samples to spectrogram length
-        samples_in_mel = original_length / len(spectrogram)
+        # Calculate samples_in_mel ratio - Go: float64(len(buf)*m.NumFreqs)/float64(len(ospectrum))
+        samples_in_mel = float(original_length * self.num_freqs) / float(len(spectrogram))
         
         # Call save_image() with spectrogram and metadata
         save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
@@ -222,9 +244,8 @@ class Phase:
         # Call to_phase() to generate spectrogram
         spectrogram = self.to_phase(audio)
         
-        # Calculate samples_in_mel ratio
-        # This is the ratio of original audio samples to spectrogram length
-        samples_in_mel = original_length / len(spectrogram)
+        # Calculate samples_in_mel ratio - Go: float64(len(buf)*m.NumFreqs)/float64(len(ospectrum))
+        samples_in_mel = float(original_length * self.num_freqs) / float(len(spectrogram))
         
         # Call save_image() with spectrogram and metadata
         save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
@@ -239,7 +260,7 @@ class Phase:
             output_file: Path to output WAV file
         """
         # Load PNG using load_image() to get spectrogram and metadata
-        spectrogram, samples_in_mel, embedded_sample_rate = load_image(input_file, self.y_reverse)
+        spectrogram, samples, embedded_sample_rate = load_image(input_file, self.y_reverse)
         
         # Call from_phase() to reconstruct audio
         audio = self.from_phase(spectrogram)
@@ -250,11 +271,11 @@ class Phase:
         else:
             sample_rate = embedded_sample_rate
         
-        # Calculate original length from samples_in_mel ratio
-        original_length = int(samples_in_mel * len(spectrogram))
+        # samples is already calculated as samples_in_mel * stride in load_image
+        original_length = int(samples)
         
         # Trim padding if original length is known using is_padded()
-        if is_padded(original_length, len(audio), self.window):
+        if is_padded(original_length, len(audio), self.window) and len(audio) > original_length:
             # Trim to original length
             audio = audio[:original_length]
         
@@ -359,17 +380,17 @@ def shrink(spectrogram, resolut, num_freqs):
     Returns:
         Shrunken spectrogram of shape (time_frames * num_freqs, 3)
     """
+    # Go implementation: keep only entries where (i % imels) < omels
+    # This means: for each time frame, keep only the first num_freqs frequency bins
     original_bins = resolut // 2
-    time_frames = len(spectrogram) // original_bins
     
-    # Reshape to (time_frames, original_bins, 3)
-    reshaped = spectrogram.reshape(time_frames, original_bins, 3)
+    out = []
+    for i in range(len(spectrogram)):
+        j = i % original_bins
+        if j < num_freqs:
+            out.append(spectrogram[i])
     
-    # Take only the first num_freqs bins
-    shrunken = reshaped[:, :num_freqs, :]
-    
-    # Reshape back to (time_frames * num_freqs, 3)
-    return shrunken.reshape(time_frames * num_freqs, 3)
+    return np.array(out, dtype=spectrogram.dtype)
 
 
 def grow(spectrogram, resolut, num_freqs):
@@ -384,25 +405,21 @@ def grow(spectrogram, resolut, num_freqs):
     Returns:
         Expanded spectrogram of shape (time_frames * resolut/2, 3)
     """
+    # Go implementation: append each entry, and when we reach the end of a frame (j+1 == imels),
+    # replicate the last entry to fill the rest of the frame
     target_bins = resolut // 2
-    time_frames = len(spectrogram) // num_freqs
     
-    # Reshape to (time_frames, num_freqs, 3)
-    reshaped = spectrogram.reshape(time_frames, num_freqs, 3)
+    out = []
+    for i in range(len(spectrogram)):
+        j = i % num_freqs
+        out.append(spectrogram[i])
+        # If we just added the last frequency bin of this time frame
+        if j + 1 == num_freqs:
+            # Replicate it to fill the remaining bins
+            for k in range(num_freqs, target_bins):
+                out.append(spectrogram[i])
     
-    # Create expanded array
-    expanded = np.zeros((time_frames, target_bins, 3), dtype=spectrogram.dtype)
-    
-    # Copy existing bins
-    expanded[:, :num_freqs, :] = reshaped
-    
-    # Replicate last frequency bin to fill expanded space
-    if target_bins > num_freqs:
-        last_bin = reshaped[:, -1:, :]  # Shape: (time_frames, 1, 3)
-        expanded[:, num_freqs:, :] = last_bin
-    
-    # Reshape back to (time_frames * target_bins, 3)
-    return expanded.reshape(time_frames * target_bins, 3)
+    return np.array(out, dtype=spectrogram.dtype)
 
 
 def load_wav(file_path):
@@ -547,31 +564,21 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
         y_reverse: Flip Y-axis if True (default: True)
     """
     # Calculate stride (time frames) from spectrogram length and num_freqs
-    time_frames = len(spectrogram) // num_freqs
+    stride = len(spectrogram) // num_freqs
     
     # Calculate max/min values for each of 3 channels
-    max_values = np.max(spectrogram, axis=0)  # Shape: (3,)
-    min_values = np.min(spectrogram, axis=0)  # Shape: (3,)
+    # Go accesses as buf[stride*y+x][l] where x is time, y is frequency
+    max_values = np.array([-np.inf, -np.inf, -np.inf], dtype=np.float64)
+    min_values = np.array([np.inf, np.inf, np.inf], dtype=np.float64)
     
-    # Normalize each channel to 0-255 range
-    normalized = np.zeros_like(spectrogram, dtype=np.uint8)
-    for ch in range(3):
-        channel_range = max_values[ch] - min_values[ch]
-        if channel_range > 0:
-            normalized[:, ch] = ((spectrogram[:, ch] - min_values[ch]) / channel_range * 255).astype(np.uint8)
-        else:
-            # If all values are the same, set to 128
-            normalized[:, ch] = 128
-    
-    # Reshape to (time_frames, num_freqs, 3) for image creation
-    reshaped = normalized.reshape(time_frames, num_freqs, 3)
-    
-    # Create RGB image: R=channel0, G=channel1, B=channel2
-    # PIL expects (height, width, channels), so we transpose to (num_freqs, time_frames, 3)
-    image_data = np.transpose(reshaped, (1, 0, 2))
-    
-    # Create PIL Image
-    img = Image.fromarray(image_data, mode='RGB')
+    for x in range(stride):
+        for l in range(3):
+            for y in range(num_freqs):
+                w = spectrogram[stride * y + x][l]
+                if w > max_values[l]:
+                    max_values[l] = w
+                if w < min_values[l]:
+                    min_values[l] = w
     
     # Pack metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
     metadata = [
@@ -580,25 +587,32 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
         samples_in_mel, sample_rate
     ]
     
-    # Convert image to mutable pixel access
-    pixels = img.load()
+    floats = []
+    for value in metadata:
+        floats.extend(pack_float16_to_bytes(value))
     
-    # Embed metadata in first column (x=0) blue channel pixels 0-15
-    # Each float16 takes 2 bytes, stored in 2 consecutive pixels' blue channels
-    for i, value in enumerate(metadata):
-        packed_bytes = pack_float16_to_bytes(value)
-        # Each float16 takes 2 bytes, so we need 2 pixels per value
-        pixel_idx_1 = i * 2
-        pixel_idx_2 = i * 2 + 1
-        
-        if pixel_idx_1 < num_freqs and pixel_idx_2 < num_freqs:
-            # Get current pixel values (R and G channels contain spectrogram data)
-            r1, g1, b1 = pixels[0, pixel_idx_1]
-            r2, g2, b2 = pixels[0, pixel_idx_2]
+    # Create image array with shape (num_freqs, stride, 3)
+    image_data = np.zeros((num_freqs, stride, 3), dtype=np.uint8)
+    
+    # Normalize each channel to 0-255 range
+    for x in range(stride):
+        for y in range(num_freqs):
+            idx = y + x * num_freqs  # Go layout: buf[y+x*mels]
             
-            # Replace blue channel with metadata bytes, keep R and G unchanged
-            pixels[0, pixel_idx_1] = (r1, g1, packed_bytes[0])
-            pixels[0, pixel_idx_2] = (r2, g2, packed_bytes[1])
+            for ch in range(3):
+                channel_range = max_values[ch] - min_values[ch]
+                if channel_range > 0:
+                    val = (spectrogram[idx][ch] - min_values[ch]) / channel_range
+                    image_data[y, x, ch] = int(255 * val)
+                else:
+                    image_data[y, x, ch] = 128
+            
+            # Embed metadata in first column (x=0) blue channel
+            if x == 0 and y < len(floats):
+                image_data[y, x, 2] = floats[y]
+    
+    # Create PIL Image
+    img = Image.fromarray(image_data, mode='RGB')
     
     # Apply Y-axis flip if y_reverse=True
     if y_reverse:
@@ -633,27 +647,28 @@ def load_image(file_path, y_reverse=True):
     if img.mode != 'RGB':
         img = img.convert('RGB')
     
+    # Get dimensions
+    width, height = img.size
+    stride = width  # time frames
+    num_freqs = height
+    
     # Get pixel access
     pixels = img.load()
-    width, height = img.size
-    num_freqs = height
-    time_frames = width
     
-    # Extract metadata from first column (x=0) blue channel pixels 0-15
-    # Metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
-    metadata_bytes = []
-    for i in range(min(16, num_freqs)):  # 8 float16 values * 2 bytes each = 16 bytes
-        r, g, b = pixels[0, i]
-        metadata_bytes.append(b)
+    # Extract metadata from first column (x=0) blue channel
+    floats = []
+    for y in range(min(32, num_freqs)):
+        r, g, b = pixels[0, y]
+        floats.append(b)
     
-    # Pad with zeros if we don't have enough pixels
-    while len(metadata_bytes) < 16:
-        metadata_bytes.append(0)
+    # Pad with zeros if needed
+    while len(floats) < 16:
+        floats.append(0)
     
     # Unpack 8 float16 values for metadata
     metadata = []
     for i in range(8):
-        byte_pair = bytes([metadata_bytes[i * 2], metadata_bytes[i * 2 + 1]])
+        byte_pair = bytes([floats[i * 2], floats[i * 2 + 1]])
         value = unpack_bytes_to_float64(byte_pair)
         metadata.append(value)
     
@@ -663,18 +678,26 @@ def load_image(file_path, y_reverse=True):
     sample_rate = int(metadata[7])
     
     # Convert image to numpy array
-    img_array = np.array(img)  # Shape: (height, width, 3) = (num_freqs, time_frames, 3)
+    img_array = np.array(img)  # Shape: (height, width, 3) = (num_freqs, stride, 3)
     
-    # Transpose to (time_frames, num_freqs, 3)
-    transposed = np.transpose(img_array, (1, 0, 2))
+    # Create output buffer matching Go layout: buf[y+x*mels]
+    buf = []
+    for x in range(stride):
+        for y in range(num_freqs):
+            val0 = float(img_array[y, x, 0]) / 255.0
+            val1 = float(img_array[y, x, 1]) / 255.0
+            val2 = float(img_array[y, x, 2]) / 255.0
+            buf.append([val0, val1, val2])
     
-    # Reshape to (time_frames * num_freqs, 3)
-    flattened = transposed.reshape(time_frames * num_freqs, 3)
+    buf = np.array(buf, dtype=np.float64)
     
-    # Denormalize from 0-255 to original range using metadata
-    spectrogram = np.zeros_like(flattened, dtype=np.float64)
-    for ch in range(3):
-        channel_range = max_values[ch] - min_values[ch]
-        spectrogram[:, ch] = (flattened[:, ch].astype(np.float64) / 255.0) * channel_range + min_values[ch]
+    # Denormalize from 0-1 to original range using metadata
+    for i in range(len(buf)):
+        buf[i][0] = (buf[i][0] * (max_values[0] - min_values[0]) + min_values[0])
+        buf[i][1] = (buf[i][1] * (max_values[1] - min_values[1]) + min_values[1])
+        buf[i][2] = (buf[i][2] * (max_values[2] - min_values[2]) + min_values[2])
     
-    return spectrogram, samples_in_mel, sample_rate
+    # Calculate samples from samples_in_mel
+    samples = samples_in_mel * stride
+    
+    return buf, samples, sample_rate
