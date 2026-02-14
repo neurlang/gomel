@@ -112,14 +112,11 @@ class Phase:
         
         phase_repr = np.array(phase_repr, dtype=np.float64)
         
-        # Subtask 5.3: Apply shrink and normalization
+        # Subtask 5.3: Apply shrink
         # Shrink from resolut/2 bins to num_freqs bins
         shrunken = shrink(phase_repr, self.resolut, self.num_freqs)
         
-        # Apply spectral normalization (log2 transform)
-        normalized = spectral_normalize(shrunken)
-        
-        return normalized
+        return shrunken
     
     def from_phase(self, spectrogram):
         """
@@ -131,12 +128,9 @@ class Phase:
         Returns:
             1D numpy array of float64 audio samples
         """
-        # Subtask 6.1: Apply denormalization and grow
-        # Apply spectral denormalization (exp2 transform)
-        denormalized = spectral_denormalize(spectrogram)
-        
+        # Subtask 6.1: Apply grow
         # Expand from num_freqs bins to resolut/2 bins
-        grown = grow(denormalized, self.resolut, self.num_freqs)
+        grown = grow(spectrogram, self.resolut, self.num_freqs)
         
         # Subtask 6.2: Reconstruct complex spectrum from 3-channel representation
         num_bins = self.resolut // 2
