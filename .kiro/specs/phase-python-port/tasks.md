@@ -95,19 +95,19 @@
     - **Property 7: Audio clipping prevents out-of-range values**
     - **Validates: Requirements 5.3**
 
-- [ ] 5. Implement to_phase() method for audio to spectrogram conversion
-  - [ ] 5.1 Implement STFT computation
+- [x] 5. Implement to_phase() method for audio to spectrogram conversion
+  - [x] 5.1 Implement STFT computation
     - Apply padding to audio buffer
     - Use scipy.signal.stft with Hann window, configured window size and FFT resolution
     - _Requirements: 2.1, 2.2_
 
-  - [ ] 5.2 Extract 3-channel phase representation from STFT
+  - [x] 5.2 Extract 3-channel phase representation from STFT
     - For each frequency bin j: extract v0 = spectrum[j+1] and v1 = spectrum[resolut-j-1]
     - Store realn1 = imag(v0), realm0 = real(v1), realm1 = imag(v1)
     - Create output array with shape (time_frames * resolut/2, 3)
     - _Requirements: 2.3, 2.4_
 
-  - [ ] 5.3 Apply shrink and normalization
+  - [x] 5.3 Apply shrink and normalization
     - Call shrink() to reduce to num_freqs bins
     - Call spectral_normalize() to apply log2 transform
     - _Requirements: 2.5, 2.6_

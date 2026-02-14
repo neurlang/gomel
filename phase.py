@@ -53,6 +53,69 @@ class Phase:
         else:
             # Default to 768 if neither sample_rate nor num_freqs is provided
             self.num_freqs = 768
+    
+    def to_phase(self, audio_buffer):
+        """
+        Convert audio buffer to phase-preserving spectrogram.
+        
+        Args:
+            audio_buffer: 1D numpy array of float64 audio samples
+            
+        Returns:
+            2D numpy array of shape (time_frames * num_freqs, 3) containing
+            [realn1, realm0, realm1] for each time-frequency bin
+        """
+        # Subtask 5.1: Apply padding and compute STFT
+        padded_audio = pad(audio_buffer, self.window)
+        
+        # Compute STFT with Hann window, requesting full two-sided spectrum
+        # noverlap = window - hop_size, where hop_size = window // 4
+        hop_size = self.window // 4
+        noverlap = self.window - hop_size
+        
+        frequencies, times, stft_result = signal.stft(
+            padded_audio,
+            window='hann',
+            nperseg=self.window,
+            noverlap=noverlap,
+            nfft=self.resolut,
+            return_onesided=False
+        )
+        
+        # Subtask 5.2: Extract 3-channel phase representation from STFT
+        # stft_result now has shape (resolut, time_frames) with full spectrum
+        
+        time_frames = stft_result.shape[1]
+        num_bins = self.resolut // 2
+        
+        # Create output array with shape (time_frames * num_bins, 3)
+        phase_repr = np.zeros((time_frames * num_bins, 3), dtype=np.float64)
+        
+        # For each time frame and frequency bin:
+        # v0 = spectrum[j+1], v1 = spectrum[resolut-j-1]
+        # realn1 = imag(v0), realm0 = real(v1), realm1 = imag(v1)
+        for t in range(time_frames):
+            for j in range(num_bins):
+                v0 = stft_result[j + 1, t]
+                v1 = stft_result[self.resolut - j - 1, t]
+                
+                realn1 = np.imag(v0)
+                realm0 = np.real(v1)
+                realm1 = np.imag(v1)
+                
+                idx = t * num_bins + j
+                phase_repr[idx, 0] = realn1
+                phase_repr[idx, 1] = realm0
+                phase_repr[idx, 2] = realm1
+        
+        # Subtask 5.3: Apply shrink and normalization
+        # Shrink from resolut/2 bins to num_freqs bins
+        shrunken = shrink(phase_repr, self.resolut, self.num_freqs)
+        
+        # Apply spectral normalization (log2 transform)
+        normalized = spectral_normalize(shrunken)
+        
+        return normalized
 
 
 def pad(audio_buffer, window):
@@ -119,8 +182,11 @@ def spectral_normalize(spectrogram):
         Normalized spectrogram with log2 transformation applied
     """
     epsilon = 1e-10
-    # Apply epsilon to prevent log(0), then apply log2 to all 3 channels
-    return np.log2(spectrogram + epsilon)
+    # Take absolute value to handle negative values, apply epsilon to prevent log(0), then apply log2
+    # This matches the Go implementation which checks if values are < epsilon and sets them to epsilon
+    normalized = np.copy(spectrogram)
+    normalized = np.where(np.abs(normalized) < epsilon, epsilon, np.abs(normalized))
+    return np.log2(normalized)
 
 
 def spectral_denormalize(spectrogram):
