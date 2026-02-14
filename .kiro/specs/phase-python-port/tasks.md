@@ -57,26 +57,26 @@
     - Test custom configuration values are stored
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 4. Implement audio file I/O functions
-  - [ ] 4.1 Implement load_wav() function
+- [x] 4. Implement audio file I/O functions
+  - [x] 4.1 Implement load_wav() function
     - Use soundfile to load WAV as mono float64
     - Convert stereo to mono by averaging channels if needed
     - _Requirements: 4.1_
 
-  - [ ] 4.2 Implement load_flac() function
+  - [x] 4.2 Implement load_flac() function
     - Use soundfile to load FLAC as mono float64
     - Convert stereo to mono by averaging channels if needed
     - _Requirements: 4.2_
 
-  - [ ] 4.3 Implement load_wav_with_sr() function
+  - [x] 4.3 Implement load_wav_with_sr() function
     - Return tuple of (audio_buffer, sample_rate)
     - _Requirements: 4.3_
 
-  - [ ] 4.4 Implement load_flac_with_sr() function
+  - [x] 4.4 Implement load_flac_with_sr() function
     - Return tuple of (audio_buffer, sample_rate)
     - _Requirements: 4.4_
 
-  - [ ] 4.5 Implement save_wav() function
+  - [x] 4.5 Implement save_wav() function
     - Use soundfile to save as 16-bit PCM mono WAV
     - Clip audio values to [-1, 1] range before saving
     - _Requirements: 5.1, 5.2, 5.3_

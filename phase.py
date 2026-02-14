@@ -193,3 +193,97 @@ def grow(spectrogram, resolut, num_freqs):
     
     # Reshape back to (time_frames * target_bins, 3)
     return expanded.reshape(time_frames * target_bins, 3)
+
+
+def load_wav(file_path):
+    """
+    Load WAV file as mono float64 array.
+    
+    Args:
+        file_path: Path to WAV file
+        
+    Returns:
+        1D numpy array of float64 audio samples
+    """
+    audio, sample_rate = sf.read(file_path, dtype='float64')
+    
+    # Convert stereo to mono by averaging channels if needed
+    if audio.ndim > 1:
+        audio = np.mean(audio, axis=1)
+    
+    return audio
+
+
+def load_flac(file_path):
+    """
+    Load FLAC file as mono float64 array.
+    
+    Args:
+        file_path: Path to FLAC file
+        
+    Returns:
+        1D numpy array of float64 audio samples
+    """
+    audio, sample_rate = sf.read(file_path, dtype='float64')
+    
+    # Convert stereo to mono by averaging channels if needed
+    if audio.ndim > 1:
+        audio = np.mean(audio, axis=1)
+    
+    return audio
+
+
+def load_wav_with_sr(file_path):
+    """
+    Load WAV file and return audio buffer with sample rate.
+    
+    Args:
+        file_path: Path to WAV file
+        
+    Returns:
+        Tuple of (audio_buffer, sample_rate) where audio_buffer is a 1D numpy array
+        of float64 samples and sample_rate is an integer
+    """
+    audio, sample_rate = sf.read(file_path, dtype='float64')
+    
+    # Convert stereo to mono by averaging channels if needed
+    if audio.ndim > 1:
+        audio = np.mean(audio, axis=1)
+    
+    return audio, sample_rate
+
+
+def load_flac_with_sr(file_path):
+    """
+    Load FLAC file and return audio buffer with sample rate.
+    
+    Args:
+        file_path: Path to FLAC file
+        
+    Returns:
+        Tuple of (audio_buffer, sample_rate) where audio_buffer is a 1D numpy array
+        of float64 samples and sample_rate is an integer
+    """
+    audio, sample_rate = sf.read(file_path, dtype='float64')
+    
+    # Convert stereo to mono by averaging channels if needed
+    if audio.ndim > 1:
+        audio = np.mean(audio, axis=1)
+    
+    return audio, sample_rate
+
+
+def save_wav(file_path, audio_buffer, sample_rate):
+    """
+    Save audio buffer as mono WAV file.
+    
+    Args:
+        file_path: Path to output WAV file
+        audio_buffer: 1D numpy array of audio samples
+        sample_rate: Sample rate in Hz
+    """
+    # Clip audio values to [-1, 1] range to prevent distortion
+    clipped_audio = np.clip(audio_buffer, -1.0, 1.0)
+    
+    # Save as 16-bit PCM mono WAV
+    sf.write(file_path, clipped_audio, sample_rate, subtype='PCM_16')
