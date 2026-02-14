@@ -416,3 +416,184 @@ def save_wav(file_path, audio_buffer, sample_rate):
     
     # Save as 16-bit PCM mono WAV
     sf.write(file_path, clipped_audio, sample_rate, subtype='PCM_16')
+
+
+def pack_float16_to_bytes(value):
+    """
+    Convert float64 to float16 and pack as 2 bytes in little-endian format.
+    
+    Args:
+        value: Float64 value to pack
+        
+    Returns:
+        2 bytes representing the float16 value in little-endian format
+    """
+    # Convert float64 to float16 using numpy
+    float16_value = np.float16(value)
+    
+    # Pack as 2 bytes in little-endian format
+    # 'e' format code is for float16 (half precision)
+    return struct.pack('<e', float16_value)
+
+
+def unpack_bytes_to_float64(byte_data):
+    """
+    Unpack 2 bytes as little-endian float16 and convert to float64.
+    
+    Args:
+        byte_data: 2 bytes representing a float16 value in little-endian format
+        
+    Returns:
+        Float64 value
+    """
+    # Unpack 2 bytes as little-endian float16
+    float16_value = struct.unpack('<e', byte_data)[0]
+    
+    # Convert to float64
+    return np.float64(float16_value)
+
+
+def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y_reverse=True):
+    """
+    Save phase-preserving spectrogram as PNG image with embedded metadata.
+    
+    Args:
+        file_path: Path to output PNG file
+        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        num_freqs: Number of frequency bins
+        samples_in_mel: Ratio of samples to mel (for reconstruction)
+        sample_rate: Audio sample rate
+        y_reverse: Flip Y-axis if True (default: True)
+    """
+    # Calculate stride (time frames) from spectrogram length and num_freqs
+    time_frames = len(spectrogram) // num_freqs
+    
+    # Calculate max/min values for each of 3 channels
+    max_values = np.max(spectrogram, axis=0)  # Shape: (3,)
+    min_values = np.min(spectrogram, axis=0)  # Shape: (3,)
+    
+    # Normalize each channel to 0-255 range
+    normalized = np.zeros_like(spectrogram, dtype=np.uint8)
+    for ch in range(3):
+        channel_range = max_values[ch] - min_values[ch]
+        if channel_range > 0:
+            normalized[:, ch] = ((spectrogram[:, ch] - min_values[ch]) / channel_range * 255).astype(np.uint8)
+        else:
+            # If all values are the same, set to 128
+            normalized[:, ch] = 128
+    
+    # Reshape to (time_frames, num_freqs, 3) for image creation
+    reshaped = normalized.reshape(time_frames, num_freqs, 3)
+    
+    # Create RGB image: R=channel0, G=channel1, B=channel2
+    # PIL expects (height, width, channels), so we transpose to (num_freqs, time_frames, 3)
+    image_data = np.transpose(reshaped, (1, 0, 2))
+    
+    # Create PIL Image
+    img = Image.fromarray(image_data, mode='RGB')
+    
+    # Pack metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
+    metadata = [
+        max_values[0], max_values[1], max_values[2],
+        min_values[0], min_values[1], min_values[2],
+        samples_in_mel, sample_rate
+    ]
+    
+    # Convert image to mutable pixel access
+    pixels = img.load()
+    
+    # Embed metadata in first column (x=0) blue channel pixels 0-15
+    # Each float16 takes 2 bytes, stored in 2 consecutive pixels' blue channels
+    for i, value in enumerate(metadata):
+        packed_bytes = pack_float16_to_bytes(value)
+        # Each float16 takes 2 bytes, so we need 2 pixels per value
+        pixel_idx_1 = i * 2
+        pixel_idx_2 = i * 2 + 1
+        
+        if pixel_idx_1 < num_freqs and pixel_idx_2 < num_freqs:
+            # Get current pixel values (R and G channels contain spectrogram data)
+            r1, g1, b1 = pixels[0, pixel_idx_1]
+            r2, g2, b2 = pixels[0, pixel_idx_2]
+            
+            # Replace blue channel with metadata bytes, keep R and G unchanged
+            pixels[0, pixel_idx_1] = (r1, g1, packed_bytes[0])
+            pixels[0, pixel_idx_2] = (r2, g2, packed_bytes[1])
+    
+    # Apply Y-axis flip if y_reverse=True
+    if y_reverse:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    
+    # Save as PNG
+    img.save(file_path, format='PNG')
+
+
+def load_image(file_path, y_reverse=True):
+    """
+    Load phase-preserving spectrogram from PNG image with embedded metadata.
+    
+    Args:
+        file_path: Path to PNG file
+        y_reverse: Flip Y-axis if True (default: True)
+        
+    Returns:
+        Tuple of (spectrogram, samples_in_mel, sample_rate) where:
+        - spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        - samples_in_mel: Ratio of samples to mel
+        - sample_rate: Audio sample rate
+    """
+    # Load PNG with PIL
+    img = Image.open(file_path)
+    
+    # Apply Y-axis flip if y_reverse=True (undo the flip from save)
+    if y_reverse:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    
+    # Convert to RGB if not already
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Get pixel access
+    pixels = img.load()
+    width, height = img.size
+    num_freqs = height
+    time_frames = width
+    
+    # Extract metadata from first column (x=0) blue channel pixels 0-15
+    # Metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
+    metadata_bytes = []
+    for i in range(min(16, num_freqs)):  # 8 float16 values * 2 bytes each = 16 bytes
+        r, g, b = pixels[0, i]
+        metadata_bytes.append(b)
+    
+    # Pad with zeros if we don't have enough pixels
+    while len(metadata_bytes) < 16:
+        metadata_bytes.append(0)
+    
+    # Unpack 8 float16 values for metadata
+    metadata = []
+    for i in range(8):
+        byte_pair = bytes([metadata_bytes[i * 2], metadata_bytes[i * 2 + 1]])
+        value = unpack_bytes_to_float64(byte_pair)
+        metadata.append(value)
+    
+    max_values = np.array([metadata[0], metadata[1], metadata[2]])
+    min_values = np.array([metadata[3], metadata[4], metadata[5]])
+    samples_in_mel = metadata[6]
+    sample_rate = int(metadata[7])
+    
+    # Convert image to numpy array
+    img_array = np.array(img)  # Shape: (height, width, 3) = (num_freqs, time_frames, 3)
+    
+    # Transpose to (time_frames, num_freqs, 3)
+    transposed = np.transpose(img_array, (1, 0, 2))
+    
+    # Reshape to (time_frames * num_freqs, 3)
+    flattened = transposed.reshape(time_frames * num_freqs, 3)
+    
+    # Denormalize from 0-255 to original range using metadata
+    spectrogram = np.zeros_like(flattened, dtype=np.float64)
+    for ch in range(3):
+        channel_range = max_values[ch] - min_values[ch]
+        spectrogram[:, ch] = (flattened[:, ch].astype(np.float64) / 255.0) * channel_range + min_values[ch]
+    
+    return spectrogram, samples_in_mel, sample_rate

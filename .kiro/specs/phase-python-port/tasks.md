@@ -146,24 +146,24 @@
     - **Property 5: Volume boost scales output**
     - **Validates: Requirements 3.5**
 
-- [ ] 7. Implement PNG metadata encoding/decoding functions
-  - [ ] 7.1 Implement pack_float16_to_bytes() function
+- [x] 7. Implement PNG metadata encoding/decoding functions
+  - [x] 7.1 Implement pack_float16_to_bytes() function
     - Convert float64 to float16 using numpy
     - Pack as 2 bytes in little-endian format
     - _Requirements: 6.2_
 
-  - [ ] 7.2 Implement unpack_bytes_to_float64() function
+  - [x] 7.2 Implement unpack_bytes_to_float64() function
     - Unpack 2 bytes as little-endian float16
     - Convert to float64
     - _Requirements: 7.2_
 
-  - [ ] 7.3 Implement metadata embedding in save_image()
+  - [x] 7.3 Implement metadata embedding in save_image()
     - Calculate max/min values for each of 3 channels
     - Pack metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
     - Embed in first column (x=0) blue channel pixels 0-15
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 7.4 Implement metadata extraction in load_image()
+  - [x] 7.4 Implement metadata extraction in load_image()
     - Extract blue channel from first column pixels 0-15
     - Unpack 8 float16 values for metadata
     - Return metadata along with spectrogram
