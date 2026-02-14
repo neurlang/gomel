@@ -20,7 +20,11 @@ func main() {
 	// Create a new instance of Phase
 	var m = phase.NewPhase()
 
-	// Set parameters
+	// Set parameters to match Python defaults
+	m.YReverse = true
+	m.NumFreqs = 768
+	m.Window = 1280
+	m.Resolut = 4096
 
 	if strings.HasSuffix(filename, ".flac") {
 		// Generate the mel spectrogram and save it as a PNG file

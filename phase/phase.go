@@ -94,11 +94,9 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 			if pos < len(reconstructedSignal) {
 				val := real(buf[j]) * s.Window[j]
 				reconstructedSignal[pos] += val
-				//windowSum[pos] += s.Window[j] * s.Window[j] // Sum of squares
 			}
 		}
 	}
-
 	return reconstructedSignal
 }
 

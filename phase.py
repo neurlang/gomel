@@ -68,33 +68,26 @@ class Phase:
         # Subtask 5.1: Apply padding and compute STFT
         padded_audio = pad(audio_buffer, self.window)
         
-        # Compute STFT manually to match gossp behavior
-        # gossp uses frameShift = window + window // 16
-        hop_size = self.window + self.window // 16
+        # gossp: stft.New(Window, Resolut) means FrameShift=Window, FrameLen=Resolut
+        hop_size = self.window  # FrameShift
+        frame_len = self.resolut  # FrameLen
         
-        # Calculate number of frames
-        num_frames = (len(padded_audio) - self.window) // hop_size + 1
+        # NumFrames = int((len(input) - frameLen) / frameShift) + 1
+        num_frames = int((len(padded_audio) - frame_len) / hop_size) + 1
         
-        # Create Hann window
-        hann_window = np.hanning(self.window)
+        # Hann window is frameLen (resolut) long
+        hann_window = np.hanning(frame_len)
         
-        # Perform STFT manually
-        stft_result = np.zeros((self.resolut, num_frames), dtype=np.complex128)
+        # Perform STFT
+        stft_result = np.zeros((frame_len, num_frames), dtype=np.complex128)
         
         for i in range(num_frames):
             start = i * hop_size
-            end = start + self.window
+            end = start + frame_len
             
             if end <= len(padded_audio):
-                # Extract frame and apply window
                 frame = padded_audio[start:end] * hann_window
-                
-                # Pad to resolut length
-                padded_frame = np.zeros(self.resolut)
-                padded_frame[:self.window] = frame
-                
-                # Compute FFT
-                stft_result[:, i] = np.fft.fft(padded_frame)
+                stft_result[:, i] = np.fft.fft(frame)
         
         # Subtask 5.2: Extract 3-channel phase representation from STFT
         time_frames = stft_result.shape[1]
@@ -172,29 +165,24 @@ class Phase:
                 spectrum[j + 1, i] = v0
                 spectrum[self.resolut - j - 1, i] = v1
         
-        # Subtask 6.3: Implement ISTFT computation manually to match gossp
-        hop_size = self.window + self.window // 16
+        # Subtask 6.3: Implement ISTFT matching Go's custom ISTFT (no window normalization)
+        hop_size = self.window  # FrameShift
+        frame_len = self.resolut  # FrameLen
         
-        # Calculate output length
-        output_len = self.window + (time_frames - 1) * hop_size
+        output_len = frame_len + (time_frames - 1) * hop_size
         audio = np.zeros(output_len, dtype=np.float64)
         
-        # Create Hann window
-        hann_window = np.hanning(self.window)
+        hann_window = np.hanning(frame_len)
         
-        # Perform ISTFT manually
         for i in range(time_frames):
-            # Compute IFFT
             frame_spectrum = spectrum[:, i]
             time_domain = np.fft.ifft(frame_spectrum)
             
-            # Take real part and apply window
-            frame = np.real(time_domain[:self.window]) * hann_window
-            
-            # Overlap-add
             start = i * hop_size
-            end = start + self.window
-            audio[start:end] += frame
+            for j in range(frame_len):
+                pos = start + j
+                if pos < len(audio):
+                    audio[pos] += np.real(time_domain[j]) * hann_window[j]
         
         # Subtask 6.4: Apply volume boost if configured
         if self.volume_boost > 0:
@@ -271,12 +259,11 @@ class Phase:
         else:
             sample_rate = embedded_sample_rate
         
-        # samples is already calculated as samples_in_mel * stride in load_image
+        # samples is the original audio length
         original_length = int(samples)
         
-        # Trim padding if original length is known using is_padded()
-        if is_padded(original_length, len(audio), self.window) and len(audio) > original_length:
-            # Trim to original length
+        # Trim to original length if reconstructed audio is longer
+        if len(audio) > original_length > 0:
             audio = audio[:original_length]
         
         # Call save_wav() to write output file
@@ -286,39 +273,40 @@ class Phase:
 def pad(audio_buffer, window):
     """
     Apply padding to audio buffer for proper STFT processing.
+    Matches Go implementation exactly.
     
     Args:
         audio_buffer: 1D numpy array of audio samples
-        window: STFT window size
+        window: STFT window size (filter)
         
     Returns:
         Padded audio buffer as numpy array
     """
+    current_len = len(audio_buffer)
     min_target_size = 15 * window
-    buffer_len = len(audio_buffer)
+    pad_len = 0
     
-    if buffer_len >= min_target_size:
-        # Calculate padding to make length a multiple of window/4
-        hop_size = window // 4
-        remainder = buffer_len % hop_size
+    if current_len >= min_target_size:
+        remainder = (current_len - min_target_size) % window
         if remainder != 0:
-            pad_amount = hop_size - remainder
-            return np.pad(audio_buffer, (0, pad_amount), mode='constant', constant_values=0)
-        return audio_buffer
+            pad_len = window - remainder - 1
     else:
-        # Pad to min_target_size
-        pad_amount = min_target_size - buffer_len
-        return np.pad(audio_buffer, (0, pad_amount), mode='constant', constant_values=0)
+        pad_len = min_target_size - current_len - 1
+    
+    if pad_len > 0:
+        return np.pad(audio_buffer, (0, pad_len), mode='constant', constant_values=0)
+    return audio_buffer
 
 
 def is_padded(original_length, padded_length, window):
     """
     Detect if audio was padded based on length comparison.
+    Matches Go implementation exactly.
     
     Args:
         original_length: Original audio buffer length
         padded_length: Length after padding
-        window: STFT window size
+        window: STFT window size (filter)
         
     Returns:
         True if audio was padded, False otherwise
@@ -326,14 +314,15 @@ def is_padded(original_length, padded_length, window):
     min_target_size = 15 * window
     
     if original_length >= min_target_size:
-        hop_size = window // 4
-        remainder = original_length % hop_size
+        remainder = (original_length - min_target_size) % window
         if remainder != 0:
-            expected_padded = original_length + (hop_size - remainder)
-            return padded_length == expected_padded
-        return padded_length == original_length
+            pad_len = window - remainder - 1
+            return padded_length == original_length + pad_len
+        else:
+            return padded_length == original_length
     else:
-        return padded_length == min_target_size
+        pad_len = min_target_size - original_length - 1
+        return padded_length == original_length + pad_len
 
 
 def spectral_normalize(spectrogram):
@@ -347,10 +336,9 @@ def spectral_normalize(spectrogram):
         Normalized spectrogram with log2 transformation applied
     """
     epsilon = 1e-10
-    # Take absolute value to handle negative values, apply epsilon to prevent log(0), then apply log2
-    # This matches the Go implementation which checks if values are < epsilon and sets them to epsilon
+    # Match Go: if value < epsilon (including negatives), clamp to epsilon, then log2
     normalized = np.copy(spectrogram)
-    normalized = np.where(np.abs(normalized) < epsilon, epsilon, np.abs(normalized))
+    normalized = np.where(normalized < epsilon, epsilon, normalized)
     return np.log2(normalized)
 
 
@@ -567,7 +555,8 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     stride = len(spectrogram) // num_freqs
     
     # Calculate max/min values for each of 3 channels
-    # Go accesses as buf[stride*y+x][l] where x is time, y is frequency
+    # Go has a bug: it accesses buf[stride*y+x][l] for max/min calculation
+    # but buf[y+x*mels][l] for normalization. We replicate this bug for compatibility.
     max_values = np.array([-np.inf, -np.inf, -np.inf], dtype=np.float64)
     min_values = np.array([np.inf, np.inf, np.inf], dtype=np.float64)
     
@@ -631,9 +620,9 @@ def load_image(file_path, y_reverse=True):
         y_reverse: Flip Y-axis if True (default: True)
         
     Returns:
-        Tuple of (spectrogram, samples_in_mel, sample_rate) where:
+        Tuple of (spectrogram, samples, sample_rate) where:
         - spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
-        - samples_in_mel: Ratio of samples to mel
+        - samples: Original audio length in samples
         - sample_rate: Audio sample rate
     """
     # Load PNG with PIL
@@ -697,7 +686,7 @@ def load_image(file_path, y_reverse=True):
         buf[i][1] = (buf[i][1] * (max_values[1] - min_values[1]) + min_values[1])
         buf[i][2] = (buf[i][2] * (max_values[2] - min_values[2]) + min_values[2])
     
-    # Calculate samples from samples_in_mel
+    # Calculate samples from samples_in_mel (matching Go: samples = samples_in_mel * stride)
     samples = samples_in_mel * stride
     
     return buf, samples, sample_rate

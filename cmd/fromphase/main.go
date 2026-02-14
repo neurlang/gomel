@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/neurlang/gomel/phase"
 	"os"
-	"strconv"
 )
 
 func main() {
@@ -16,19 +15,16 @@ func main() {
 
 	// Get the filename from the command-line arguments
 	var filename = os.Args[1]
-	var freq = "44100"
-
-	if len(os.Args) > 2 {
-		freq = os.Args[2]
-	}
-	frequency, _ := strconv.Atoi(freq)
 
 	// Create a new instance of Phase
 	var m = phase.NewPhase()
 
-	// Set parameters
+	// Set parameters to match Python defaults
+	m.YReverse = true
+	m.NumFreqs = 768
+	m.Window = 1280
+	m.Resolut = 4096
 	m.VolumeBoost = 4
-	m.SampleRate = frequency
 
 	// Generate the wave from a PNG file
 	inputFile := filename

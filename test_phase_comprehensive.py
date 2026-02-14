@@ -106,7 +106,10 @@ def test_image_save_load():
         loaded_spec, loaded_samples, loaded_sr = load_image(tmp_path, y_reverse=True)
         
         assert spectrogram.shape == loaded_spec.shape, "Shape should be preserved"
-        assert abs(loaded_samples - samples_in_mel) < 0.01, "samples_in_mel should be preserved"
+        # samples = samples_in_mel * stride, so check that
+        stride = time_frames
+        expected_samples = samples_in_mel * stride
+        assert abs(loaded_samples - expected_samples) < 0.01, f"samples should be {expected_samples}, got {loaded_samples}"
         assert loaded_sr == sample_rate, "Sample rate should be preserved"
         
         print("✓ Image save/load tests passed")
