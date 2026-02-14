@@ -16,13 +16,14 @@ import struct
 class Phase:
     """Phase-preserving spectrogram encoder/decoder."""
     
-    def __init__(self, sample_rate=None, window=1280, resolut=4096, 
-                 y_reverse=True, volume_boost=0.0):
+    def __init__(self, sample_rate=None, num_freqs=None, window=1280, 
+                 resolut=4096, y_reverse=True, volume_boost=0.0):
         """
         Initialize Phase encoder/decoder.
         
         Args:
             sample_rate: Audio sample rate (determines num_freqs if not provided)
+            num_freqs: Number of frequency bins (auto-set based on sample_rate if not provided)
             window: STFT window size (default: 1280)
             resolut: FFT resolution (default: 4096)
             y_reverse: Flip Y-axis in PNG images (default: True)
@@ -34,8 +35,12 @@ class Phase:
         self.y_reverse = y_reverse
         self.volume_boost = volume_boost
         
-        # Set num_freqs based on sample rate
-        if sample_rate is not None:
+        # Set num_freqs based on sample rate or use provided value
+        if num_freqs is not None:
+            # Use explicitly provided num_freqs
+            self.num_freqs = num_freqs
+        elif sample_rate is not None:
+            # Determine num_freqs from sample rate
             if sample_rate in [8000, 16000, 48000]:
                 self.num_freqs = 768
             elif sample_rate in [11025, 22050, 44100]:
@@ -46,10 +51,8 @@ class Phase:
                     f"Supported rates are: 8000, 16000, 48000, 11025, 22050, 44100"
                 )
         else:
-            raise ValueError(
-                f"Unknown sample rate."
-                f"Specify sample rate using Phase(sample_rate=)"
-            )
+            # Default to 768 if neither sample_rate nor num_freqs is provided
+            self.num_freqs = 768
 
 
 def pad(audio_buffer, window):
