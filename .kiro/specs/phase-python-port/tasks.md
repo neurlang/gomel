@@ -6,32 +6,32 @@
   - Create `__init__.py` if creating a package
   - _Requirements: All_
 
-- [ ] 2. Implement core utility functions
-  - [ ] 2.1 Implement pad() function for audio buffer padding
+- [x] 2. Implement core utility functions
+  - [x] 2.1 Implement pad() function for audio buffer padding
     - Calculate padding based on window size and minimum target size (15 * window)
     - Handle both cases: buffer >= min_target_size and buffer < min_target_size
     - _Requirements: 2.1_
 
-  - [ ] 2.2 Implement is_padded() function to detect if audio was padded
+  - [x] 2.2 Implement is_padded() function to detect if audio was padded
     - Check if padded length matches expected padding calculation
     - Used for trimming reconstructed audio to original length
     - _Requirements: 8.5_
 
-  - [ ] 2.3 Implement spectral_normalize() function
+  - [x] 2.3 Implement spectral_normalize() function
     - Apply epsilon (1e-10) to prevent log(0)
     - Apply log2 transformation to all 3 channels
     - _Requirements: 2.5_
 
-  - [ ] 2.4 Implement spectral_denormalize() function
+  - [x] 2.4 Implement spectral_denormalize() function
     - Apply exp2 transformation to all 3 channels (inverse of normalize)
     - _Requirements: 3.1_
 
-  - [ ] 2.5 Implement shrink() function to reduce frequency bins
+  - [x] 2.5 Implement shrink() function to reduce frequency bins
     - Reduce from resolut/2 bins to num_freqs bins
     - Preserve time-frequency structure
     - _Requirements: 2.6_
 
-  - [ ] 2.6 Implement grow() function to expand frequency bins
+  - [x] 2.6 Implement grow() function to expand frequency bins
     - Expand from num_freqs bins to resolut/2 bins
     - Replicate last frequency bin to fill expanded space
     - _Requirements: 3.2_
