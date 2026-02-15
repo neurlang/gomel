@@ -17,7 +17,7 @@ class Phase:
     """Phase-preserving spectrogram encoder/decoder."""
     
     def __init__(self, sample_rate=None, num_freqs=None, window=1280, 
-                 resolut=4096, y_reverse=True, volume_boost=0.0):
+                 resolut=4096, y_reverse=True, volume_boost=0.0, HDR=False):
         """
         Initialize Phase encoder/decoder.
         
@@ -28,37 +28,36 @@ class Phase:
             resolut: FFT resolution (default: 4096)
             y_reverse: Flip Y-axis in PNG images (default: True)
             volume_boost: Volume multiplier for reconstruction (default: 0.0 = no boost)
+            HDR: Use 16 bits per channel PNG (default: False = 8 bits per channel)
         """
         self.sample_rate = sample_rate
         self.window = window
         self.resolut = resolut
         self.y_reverse = y_reverse
         self.volume_boost = volume_boost
-        
-        # Set num_freqs based on sample rate or use provided value
-        if num_freqs is not None:
-            # Use explicitly provided num_freqs
-            self.num_freqs = num_freqs
-            self.family = None  # Unknown family when num_freqs is explicitly set
-        elif sample_rate is not None:
-            # Determine num_freqs from sample rate
-            if sample_rate in [8000, 16000, 24000, 32000, 48000]:
-                self.num_freqs = 768 * 2
-                self.family = True
-            elif sample_rate in [11025, 22050, 44100]:
-                self.num_freqs = 836 * 2
-                self.family = False
-            else:
-                raise ValueError(
-                    f"Unsupported sample rate: {sample_rate}. "
-                    f"Supported rates are: 8000, 16000, 24000, 32000, 48000, 11025, 22050, 44100"
-                )
+        self.HDR = HDR
+        # Use bad defaults
+        self.num_freqs = 0
+        self.family = None
+    
+        if sample_rate is not None:
+            self.reconfigure_sr(sample_rate)
+    
+    def reconfigure_sr(self, sample_rate):
+        # Determine num_freqs from sample rate
+        if sample_rate in [8000, 16000, 24000, 32000, 48000]:
+            self.num_freqs = 768 * 2 if self.HDR else 768
+            self.family = True
+        elif sample_rate in [11025, 22050, 44100]:
+            self.num_freqs = 836 * 2 if self.HDR else 836
+            self.family = False
         else:
             raise ValueError(
-                f"Unset sample_rate"
-                f"Please configure sample_rate to Phase"
+                f"Unsupported sample rate: {sample_rate}. "
+                f"Supported rates are: 8000, 16000, 24000, 32000, 48000, 11025, 22050, 44100"
             )
-    
+
+
     def pad_shift(self, sample_rate):
         if self.family:
             if sample_rate == 48000:     
@@ -261,6 +260,8 @@ class Phase:
         """
         # Load WAV file using load_wav_with_sr()
         audio, sample_rate = load_wav_with_sr(input_file)
+
+        self.reconfigure_sr(sample_rate=sample_rate)
         
         # Apply zero stuffing upsampling if configured
         zero_pad = self.zero_pad(sample_rate)
@@ -282,7 +283,7 @@ class Phase:
         
         # Call save_image() with spectrogram and metadata
         save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
-                   sample_rate, self.y_reverse)
+                   sample_rate, self.y_reverse, self.HDR)
     
     def to_phase_flac(self, input_file, output_file):
         """
@@ -295,6 +296,8 @@ class Phase:
         # Load FLAC file using load_flac_with_sr()
         audio, sample_rate = load_flac_with_sr(input_file)
         
+        self.reconfigure_sr(sample_rate=sample_rate)
+
         # Apply zero stuffing upsampling if configured
         zero_pad = self.zero_pad(sample_rate)
         zero_shift = self.zero_shift(sample_rate)
@@ -315,7 +318,7 @@ class Phase:
         
         # Call save_image() with spectrogram and metadata
         save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
-                   sample_rate, self.y_reverse)
+                   sample_rate, self.y_reverse, self.HDR)
     
     def to_wav_png(self, input_file, output_file):
         """
@@ -326,7 +329,7 @@ class Phase:
             output_file: Path to output WAV file
         """
         # Load PNG using load_image() to get spectrogram and metadata
-        spectrogram, samples, embedded_sample_rate = load_image(input_file, self.y_reverse)
+        spectrogram, samples, embedded_sample_rate = load_image(input_file, self.y_reverse, self.HDR)
         
         # Call from_phase() to reconstruct audio
         audio = self.from_phase(spectrogram)
@@ -653,7 +656,7 @@ def unpack_bytes_to_float64(byte_data):
     return np.float64(float16_value)
 
 
-def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y_reverse=True):
+def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y_reverse=True, hdr=False):
     """
     Save phase-preserving spectrogram as PNG image with embedded metadata.
     
@@ -664,6 +667,7 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
         samples_in_mel: Ratio of samples to mel (for reconstruction)
         sample_rate: Audio sample rate
         y_reverse: Flip Y-axis if True (default: True)
+        hdr: Use 16 bits per channel if True, 8 bits if False (default: False)
     """
     # Calculate stride (time frames) from spectrogram length and num_freqs
     stride = len(spectrogram) // num_freqs
@@ -692,10 +696,13 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     for value in metadata:
         floats.extend(pack_float16_to_bytes(value))
     
-    # Create image array with shape (num_freqs, stride, 3)
-    image_data = np.zeros((num_freqs, stride, 3), dtype=np.uint8)
+    max_val = 65535 if hdr else 255
+    dtype = np.uint16 if hdr else np.uint8
     
-    # Normalize each channel to 0-255 range
+    # Create image array with shape (num_freqs, stride, 3)
+    image_data = np.zeros((num_freqs, stride, 3), dtype=dtype)
+    
+    # Normalize each channel to 0-max_val range
     for x in range(stride):
         for y in range(num_freqs):
             idx = y + x * num_freqs  # Go layout: buf[y+x*mels]
@@ -704,32 +711,56 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
                 channel_range = max_values[ch] - min_values[ch]
                 if channel_range > 0:
                     val = (spectrogram[idx][ch] - min_values[ch]) / channel_range
-                    image_data[y, x, ch] = int(255 * val)
+                    image_data[y, x, ch] = int(max_val * val)
                 else:
-                    image_data[y, x, ch] = 128
+                    image_data[y, x, ch] = max_val // 2
             
             # Embed metadata in first column (x=0) blue channel
             if x == 0 and y < len(floats):
                 image_data[y, x, 2] = floats[y]
     
-    # Create PIL Image
-    img = Image.fromarray(image_data, mode='RGB')
-    
-    # Apply Y-axis flip if y_reverse=True
-    if y_reverse:
-        img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    
-    # Save as PNG
-    img.save(file_path, format='PNG')
+    if hdr:
+        # For 16-bit PNG, save each channel as a separate 16-bit grayscale image
+        # and combine using raw data, or use a library that supports 16-bit RGB.
+        # PIL supports 16-bit per channel via mode 'I;16' for single channel.
+        # For 3-channel 16-bit, we write raw PNG using the png data directly.
+        import png
+        
+        # Apply Y-axis flip if y_reverse=True
+        if y_reverse:
+            image_data = image_data[::-1, :, :]
+        
+        # Flatten each row to interleaved RGB: [R0, G0, B0, R1, G1, B1, ...]
+        rows = []
+        for y in range(num_freqs):
+            row = []
+            for x in range(stride):
+                row.extend([int(image_data[y, x, 0]), int(image_data[y, x, 1]), int(image_data[y, x, 2])])
+            rows.append(row)
+        
+        writer = png.Writer(width=stride, height=num_freqs, bitdepth=16, greyscale=False, alpha=False)
+        with open(file_path, 'wb') as f:
+            writer.write(f, rows)
+    else:
+        # Create PIL Image (8-bit)
+        img = Image.fromarray(image_data, mode='RGB')
+        
+        # Apply Y-axis flip if y_reverse=True
+        if y_reverse:
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+        
+        # Save as PNG
+        img.save(file_path, format='PNG')
 
 
-def load_image(file_path, y_reverse=True):
+def load_image(file_path, y_reverse=True, hdr=False):
     """
     Load phase-preserving spectrogram from PNG image with embedded metadata.
     
     Args:
         file_path: Path to PNG file
         y_reverse: Flip Y-axis if True (default: True)
+        hdr: Expect 16 bits per channel if True, 8 bits if False (default: False)
         
     Returns:
         Tuple of (spectrogram, samples, sample_rate) where:
@@ -737,30 +768,46 @@ def load_image(file_path, y_reverse=True):
         - samples: Original audio length in samples
         - sample_rate: Audio sample rate
     """
-    # Load PNG with PIL
-    img = Image.open(file_path)
+    max_val = 65535 if hdr else 255
     
-    # Apply Y-axis flip if y_reverse=True (undo the flip from save)
-    if y_reverse:
-        img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    
-    # Convert to RGB if not already
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
-    
-    # Get dimensions
-    width, height = img.size
-    stride = width  # time frames
-    num_freqs = height
-    
-    # Get pixel access
-    pixels = img.load()
+    if hdr:
+        import png
+        reader = png.Reader(filename=file_path)
+        w, h, rows_iter, info = reader.read()
+        
+        # Read all rows into a numpy array
+        # Each row is flat interleaved RGB: [R0, G0, B0, R1, G1, B1, ...]
+        rows = list(rows_iter)
+        img_array = np.array(rows, dtype=np.uint16).reshape(h, w, 3)
+        
+        # Apply Y-axis flip if y_reverse=True (undo the flip from save)
+        if y_reverse:
+            img_array = img_array[::-1, :, :]
+        
+        stride = w
+        num_freqs = h
+    else:
+        # Load PNG with PIL
+        img = Image.open(file_path)
+        
+        # Apply Y-axis flip if y_reverse=True (undo the flip from save)
+        if y_reverse:
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+        
+        # Convert to RGB if not already
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        width, height = img.size
+        stride = width
+        num_freqs = height
+        
+        img_array = np.array(img)  # Shape: (height, width, 3)
     
     # Extract metadata from first column (x=0) blue channel
     floats = []
     for y in range(min(32, num_freqs)):
-        r, g, b = pixels[0, y]
-        floats.append(b)
+        floats.append(int(img_array[y, 0, 2]))
     
     # Pad with zeros if needed
     while len(floats) < 16:
@@ -769,7 +816,7 @@ def load_image(file_path, y_reverse=True):
     # Unpack 8 float16 values for metadata
     metadata = []
     for i in range(8):
-        byte_pair = bytes([floats[i * 2], floats[i * 2 + 1]])
+        byte_pair = bytes([floats[i * 2] & 0xFF, floats[i * 2 + 1] & 0xFF])
         value = unpack_bytes_to_float64(byte_pair)
         metadata.append(value)
     
@@ -778,16 +825,13 @@ def load_image(file_path, y_reverse=True):
     samples_in_mel = metadata[6]
     sample_rate = int(metadata[7])
     
-    # Convert image to numpy array
-    img_array = np.array(img)  # Shape: (height, width, 3) = (num_freqs, stride, 3)
-    
     # Create output buffer matching Go layout: buf[y+x*mels]
     buf = []
     for x in range(stride):
         for y in range(num_freqs):
-            val0 = float(img_array[y, x, 0]) / 255.0
-            val1 = float(img_array[y, x, 1]) / 255.0
-            val2 = float(img_array[y, x, 2]) / 255.0
+            val0 = float(img_array[y, x, 0]) / float(max_val)
+            val1 = float(img_array[y, x, 1]) / float(max_val)
+            val2 = float(img_array[y, x, 2]) / float(max_val)
             buf.append([val0, val1, val2])
     
     buf = np.array(buf, dtype=np.float64)
