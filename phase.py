@@ -39,21 +39,75 @@ class Phase:
         if num_freqs is not None:
             # Use explicitly provided num_freqs
             self.num_freqs = num_freqs
+            self.family = None  # Unknown family when num_freqs is explicitly set
         elif sample_rate is not None:
             # Determine num_freqs from sample rate
-            if sample_rate in [8000, 16000, 48000]:
-                self.num_freqs = 768
+            if sample_rate in [8000, 16000, 24000, 32000, 48000]:
+                self.num_freqs = 768 * 2
+                self.family = True
             elif sample_rate in [11025, 22050, 44100]:
-                self.num_freqs = 836
+                self.num_freqs = 836 * 2
+                self.family = False
             else:
                 raise ValueError(
                     f"Unsupported sample rate: {sample_rate}. "
-                    f"Supported rates are: 8000, 16000, 48000, 11025, 22050, 44100"
+                    f"Supported rates are: 8000, 16000, 24000, 32000, 48000, 11025, 22050, 44100"
                 )
         else:
-            # Default to 768 if neither sample_rate nor num_freqs is provided
-            self.num_freqs = 768
+            raise ValueError(
+                f"Unset sample_rate"
+                f"Please configure sample_rate to Phase"
+            )
     
+    def pad_shift(self, sample_rate):
+        if self.family:
+            if sample_rate == 48000:     
+                zero_pad = 0
+                zero_shift = 0
+                return zero_pad, zero_shift
+            if sample_rate == 32000:
+                # 32000 -> 48000: 1.5x (keep 2 samples, insert 1 zero)
+                zero_pad = 2
+                zero_shift = 1
+                return zero_pad, zero_shift
+            if sample_rate == 24000:
+                zero_pad = 1
+                zero_shift = 1  # 24000 -> 48000: 2x (1 sample + 1 zero)
+                return zero_pad, zero_shift
+            if sample_rate == 16000:
+                zero_pad = 1
+                zero_shift = 2  # 16000 -> 48000: 3x (1 sample + 2 zeros)
+                return zero_pad, zero_shift
+            if sample_rate == 8000:
+                zero_pad = 1
+                zero_shift = 5  # 8000 -> 48000: 6x (1 sample + 5 zeros)
+                return zero_pad, zero_shift
+        else:
+            if sample_rate == 44100:     
+                zero_pad = 0
+                zero_shift = 0
+                return zero_pad, zero_shift
+            if sample_rate == 22050:
+                zero_pad = 1
+                zero_shift = 1  # 22050 -> 44100: 2x (1 sample + 1 zero)
+                return zero_pad, zero_shift
+            if sample_rate == 11025:
+                zero_pad = 1
+                zero_shift = 3  # 11025 -> 44100: 4x (1 sample + 3 zeros)
+                return zero_pad, zero_shift
+        raise ValueError(
+            f"Unsupported sample_rate"
+            f"Please configure sample_rate to Phase"
+        )
+
+    def zero_pad(self, sr):
+        zero_pad, _ = self.pad_shift(sr)
+        return zero_pad
+
+    def zero_shift(self, sr):
+        _, zero_shift = self.pad_shift(sr)
+        return zero_shift
+
     def to_phase(self, audio_buffer):
         """
         Convert audio buffer to phase-preserving spectrogram.
@@ -208,6 +262,15 @@ class Phase:
         # Load WAV file using load_wav_with_sr()
         audio, sample_rate = load_wav_with_sr(input_file)
         
+        # Apply zero stuffing upsampling if configured
+        zero_pad = self.zero_pad(sample_rate)
+        zero_shift = self.zero_shift(sample_rate)
+        if zero_pad > 0:
+            original_len = len(audio)
+            audio = zero_stuff_upsample(audio, zero_pad, zero_shift)
+            # Update sample rate based on actual upsampling ratio
+            sample_rate = int(sample_rate * len(audio) / original_len)
+        
         # Store original length for padding detection
         original_length = len(audio)
         
@@ -231,6 +294,15 @@ class Phase:
         """
         # Load FLAC file using load_flac_with_sr()
         audio, sample_rate = load_flac_with_sr(input_file)
+        
+        # Apply zero stuffing upsampling if configured
+        zero_pad = self.zero_pad(sample_rate)
+        zero_shift = self.zero_shift(sample_rate)
+        if zero_pad > 0:
+            original_len = len(audio)
+            audio = zero_stuff_upsample(audio, zero_pad, zero_shift)
+            # Update sample rate based on actual upsampling ratio
+            sample_rate = int(sample_rate * len(audio) / original_len)
         
         # Store original length for padding detection
         original_length = len(audio)
@@ -259,11 +331,9 @@ class Phase:
         # Call from_phase() to reconstruct audio
         audio = self.from_phase(spectrogram)
         
-        # Use embedded sample rate if self.sample_rate is not set
-        if self.sample_rate is not None:
-            sample_rate = self.sample_rate
-        else:
-            sample_rate = embedded_sample_rate
+        # Round embedded sample rate to nearest standard rate
+        standard_rates = [8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000]
+        sample_rate = min(standard_rates, key=lambda x: abs(x - embedded_sample_rate))
         
         # samples is the original audio length
         original_length = int(samples)
@@ -452,6 +522,44 @@ def load_flac(file_path):
         audio = np.mean(audio, axis=1)
     
     return audio
+
+
+def zero_stuff_upsample(audio, zero_pad, zero_shift):
+    """
+    Upsample audio by inserting zeros between samples.
+    
+    Args:
+        audio: 1D numpy array of audio samples
+        zero_pad: Number of samples to keep before inserting zeros
+        zero_shift: Number of zeros to insert after each zero_pad samples
+        
+    Returns:
+        Upsampled audio buffer with zeros inserted
+        
+    Examples:
+        - 22050 -> 44100: zero_pad=1, zero_shift=1 (keep 1 sample, pad 1 zero) = 2x
+        - 11025 -> 44100: zero_pad=1, zero_shift=3 (keep 1 sample, pad 3 zeros) = 4x
+        - 32000 -> 48000: zero_pad=2, zero_shift=1 (keep 2 samples, pad 1 zero) = 1.5x
+    """
+    if zero_pad == 0:
+        return audio
+    
+    # Calculate output length
+    # For every zero_pad samples, we add zero_shift zeros
+    num_groups = (len(audio) + zero_pad - 1) // zero_pad
+    output_len = len(audio) + num_groups * zero_shift
+    output = np.zeros(output_len, dtype=audio.dtype)
+    
+    # Insert original samples with zeros in between
+    out_idx = 0
+    for i in range(len(audio)):
+        output[out_idx] = audio[i]
+        out_idx += 1
+        # After every zero_pad samples, insert zero_shift zeros
+        if (i + 1) % zero_pad == 0:
+            out_idx += zero_shift
+    
+    return output
 
 
 def load_wav_with_sr(file_path):
