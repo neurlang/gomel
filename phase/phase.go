@@ -85,18 +85,41 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 	frameShift := s.FrameShift
 	frameLen := len(spectrogram[0])
 	numFrames := len(spectrogram)
-	reconstructedSignal := make([]float64, frameLen+(numFrames-1)*frameShift)
+	outputLen := frameLen + (numFrames-1)*frameShift
+	reconstructedSignal := make([]float64, outputLen)
+	windowSum := make([]float64, outputLen)
 
+	// Overlap-add with window sum accumulation
 	for i := 0; i < numFrames; i++ {
 		buf := fft.IFFT(spectrogram[i])
 		for j := 0; j < frameLen; j++ {
 			pos := i*frameShift + j
-			if pos < len(reconstructedSignal) {
+			if pos < outputLen {
 				val := real(buf[j]) * s.Window[j]
 				reconstructedSignal[pos] += val
+				windowSum[pos] += s.Window[j] * s.Window[j]
 			}
 		}
 	}
+
+	// Normalize by window sum with stability-based edge handling
+	maxWindowSum := 0.0
+	for _, ws := range windowSum {
+		if ws > maxWindowSum {
+			maxWindowSum = ws
+		}
+	}
+	stableThreshold := maxWindowSum * 0.5
+
+	for n := 0; n < outputLen; n++ {
+		if windowSum[n] > stableThreshold {
+			reconstructedSignal[n] /= windowSum[n]
+		} else if windowSum[n] > 1e-21 {
+			// Proportional fade in transition zones
+			reconstructedSignal[n] = reconstructedSignal[n] / windowSum[n] * (windowSum[n] / stableThreshold)
+		}
+	}
+
 	return reconstructedSignal
 }
 
