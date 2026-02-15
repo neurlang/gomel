@@ -669,15 +669,13 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     stride = len(spectrogram) // num_freqs
     
     # Calculate max/min values for each of 3 channels
-    # Go has a bug: it accesses buf[stride*y+x][l] for max/min calculation
-    # but buf[y+x*mels][l] for normalization. We replicate this bug for compatibility.
     max_values = np.array([-np.inf, -np.inf, -np.inf], dtype=np.float64)
     min_values = np.array([np.inf, np.inf, np.inf], dtype=np.float64)
     
     for x in range(stride):
         for l in range(3):
             for y in range(num_freqs):
-                w = spectrogram[stride * y + x][l]
+                w = spectrogram[y + x * num_freqs][l]
                 if w > max_values[l]:
                     max_values[l] = w
                 if w < min_values[l]:
