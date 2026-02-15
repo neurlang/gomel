@@ -20,7 +20,7 @@ func dumpbuffer(buf [][3]float64, mels int) (out []uint16) {
 	for l := 0; l < 2; l++ {
 		for x := 0; x < stride; x++ {
 			for y := 0; y < mels; y++ {
-				var w = buf[stride*y+x][l]
+				var w = buf[y+x*mels][l]
 				if w > mgc_max[l] {
 					mgc_max[l] = w
 				}
@@ -143,7 +143,7 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 	for x := 0; x < stride; x++ {
 		for l := 0; l < 3; l++ {
 			for y := 0; y < mels; y++ {
-				var w = buf[stride*y+x][l]
+				var w = buf[y+x*mels][l]
 				if w > mgc_max[l] {
 					mgc_max[l] = w
 				}
@@ -295,7 +295,7 @@ func loadflac(name string) (out []float64, sr float64) {
 
 		for _, subframe := range frame.Subframes {
 			for _, sample := range subframe.Samples {
-				out = append(out, float64(sample)/(256*256))
+				out = append(out, float64(sample)/(256*128))
 			}
 			//break
 		}

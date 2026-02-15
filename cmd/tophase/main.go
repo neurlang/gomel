@@ -22,7 +22,7 @@ func main() {
 
 	// Set parameters to match Python defaults
 	m.YReverse = true
-	m.NumFreqs = 768
+	m.NumFreqs = 768 * 2
 	m.Window = 1280
 	m.Resolut = 4096
 

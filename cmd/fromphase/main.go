@@ -21,10 +21,10 @@ func main() {
 
 	// Set parameters to match Python defaults
 	m.YReverse = true
-	m.NumFreqs = 768
+	m.NumFreqs = 768 * 2
 	m.Window = 1280
 	m.Resolut = 4096
-	m.VolumeBoost = 2 // 2x boost to compensate for quantization loss
+	m.VolumeBoost = 0
 
 	// Generate the wave from a PNG file
 	inputFile := filename
