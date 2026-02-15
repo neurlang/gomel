@@ -67,6 +67,7 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 
 	// Get the bounds of the image
 	bounds := img.Bounds()
+	mels := bounds.Max.Y - bounds.Min.Y
 	var floats []byte
 	for x := bounds.Min.X; x < bounds.Max.X; x++ {
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -81,7 +82,9 @@ func loadpng(name string, reverse bool) (buf [][2]float64, samples, samplerate f
 			}
 			r, g, b, _ := color.RGBA()
 
-			if x == 0 && y < 32 {
+			// Extract metadata from first column (x=0) blue channel at high-y end
+			metaStart := mels - 8
+			if x == 0 && y >= metaStart {
 				floats = append(floats, byte(b>>8))
 			}
 
@@ -160,8 +163,11 @@ func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in
 
 			col.R = uint8(int(255 * val0))
 			col.G = uint8(int(255 * val1))
-			if x == 0 {
-				col.B = uint8(int(floats[y&7]))
+			// Embed metadata in first column (x=0) blue channel at high-y end
+			// so it appears at top-left corner after y_reverse flip
+			metaStart := mels - len(floats)
+			if x == 0 && y >= metaStart {
+				col.B = uint8(int(floats[y-metaStart]))
 			} /*else {
 				col.B = uint8(int(255 * val2))
 			}*/
