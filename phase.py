@@ -716,8 +716,10 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
                     image_data[y, x, ch] = max_val // 2
             
             # Embed metadata in first column (x=0) blue channel
-            if x == 0 and y < len(floats):
-                image_data[y, x, 2] = floats[y]
+            # Place at high-y end so it appears at top-left after y_reverse flip
+            if x == 0 and y >= num_freqs - len(floats):
+                meta_idx = y - (num_freqs - len(floats))
+                image_data[y, x, 2] = floats[meta_idx]
     
     if hdr:
         # For 16-bit PNG, save each channel as a separate 16-bit grayscale image
@@ -804,14 +806,13 @@ def load_image(file_path, y_reverse=True, hdr=False):
         
         img_array = np.array(img)  # Shape: (height, width, 3)
     
-    # Extract metadata from first column (x=0) blue channel
+    # Extract metadata from first column (x=0) blue channel (stored at high-y end)
+    # 8 float16 values = 16 bytes stored in the last 16 rows
+    num_meta_bytes = 16
     floats = []
-    for y in range(min(32, num_freqs)):
+    for i in range(num_meta_bytes):
+        y = num_freqs - num_meta_bytes + i
         floats.append(int(img_array[y, 0, 2]))
-    
-    # Pad with zeros if needed
-    while len(floats) < 16:
-        floats.append(0)
     
     # Unpack 8 float16 values for metadata
     metadata = []
