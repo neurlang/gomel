@@ -24,7 +24,7 @@ func main() {
 	m.NumFreqs = 768
 	m.Window = 1280
 	m.Resolut = 4096
-	m.VolumeBoost = 4
+	m.VolumeBoost = 2 // 2x boost to compensate for quantization loss
 
 	// Generate the wave from a PNG file
 	inputFile := filename

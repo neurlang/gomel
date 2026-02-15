@@ -54,7 +54,6 @@ func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
 	}
 
 	ospectrum = shrink(ospectrum, m.Resolut/2, m.NumFreqs)
-	spectral_normalize(ospectrum)
 
 	return ospectrum, nil
 
@@ -128,7 +127,6 @@ func (m *Phase) FromPhase(ospectrum [][3]float64) ([]float64, error) {
 
 	stft1 := stft.New(m.Window, m.Resolut)
 
-	spectral_denormalize(ospectrum)
 	ospectrum = grow(ospectrum, m.NumFreqs, m.Resolut/2)
 
 	undo := m.undospectrum(ospectrum)
