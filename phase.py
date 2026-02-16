@@ -17,7 +17,7 @@ class Phase:
     """Phase-preserving spectrogram encoder/decoder."""
     
     def __init__(self, sample_rate=None, num_freqs=None, window=1280, 
-                 resolut=4096, y_reverse=True, volume_boost=0.0, HDR=False, IHS=0):
+                 resolut=4096, y_reverse=True, volume_boost=0.0, HDR=False, IHS=False):
         """
         Initialize Phase encoder/decoder.
         
@@ -29,7 +29,8 @@ class Phase:
             y_reverse: Flip Y-axis in PNG images (default: True)
             volume_boost: Volume multiplier for reconstruction (default: 0.0 = no boost)
             HDR: Use 16 bits per channel PNG (default: False = 8 bits per channel)
-            IHS: Number of inverse hyperbolic sine passes before quantization (default: 0 = disabled)
+            IHS: Enable inverse hyperbolic sine compression (default: False).
+                 When True, uses 0 passes for HDR (unnecessary) and 2 passes for 8-bit.
         """
         self.sample_rate = sample_rate
         self.window = window
@@ -37,7 +38,7 @@ class Phase:
         self.y_reverse = y_reverse
         self.volume_boost = volume_boost
         self.HDR = HDR
-        self.IHS = IHS
+        self.IHS = 0 if HDR else 2 if IHS else 0
         # Use bad defaults
         self.num_freqs = 0
         self.family = None
