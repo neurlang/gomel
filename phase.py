@@ -711,7 +711,7 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
                 channel_range = max_values[ch] - min_values[ch]
                 if channel_range > 0:
                     val = (spectrogram[idx][ch] - min_values[ch]) / channel_range
-                    image_data[y, x, ch] = int(max_val * val)
+                    image_data[y, x, ch] = min(max_val, max(0, round(max_val * val)))
                 else:
                     image_data[y, x, ch] = max_val // 2
             
