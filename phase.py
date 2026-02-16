@@ -271,8 +271,6 @@ class Phase:
         if zero_pad > 0:
             original_len = len(audio)
             audio = zero_stuff_upsample(audio, zero_pad, zero_shift)
-            # Update sample rate based on actual upsampling ratio
-            sample_rate = int(sample_rate * len(audio) / original_len)
         
         # Store original length for padding detection
         original_length = len(audio)
@@ -331,12 +329,13 @@ class Phase:
             output_file: Path to output WAV file
         """
         # Load PNG using load_image() to get spectrogram and metadata
-        spectrogram, samples, embedded_sample_rate = load_image(input_file, self.y_reverse, self.HDR, self.IHS)
+        spectrogram, samples, embedded_sample_rate, self.num_freqs = load_image(input_file, self.y_reverse, self.HDR, self.IHS)
         
         # Call from_phase() to reconstruct audio
         audio = self.from_phase(spectrogram)
         
         # Round embedded sample rate to nearest standard rate
+        main_rate = 48000 if self.num_freqs in [768, 768 * 2] else 44100
         standard_rates = [8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000]
         sample_rate = min(standard_rates, key=lambda x: abs(x - embedded_sample_rate))
         
@@ -348,7 +347,9 @@ class Phase:
             audio = audio[:original_length]
         
         # Call save_wav() to write output file
-        save_wav(output_file, audio, sample_rate)
+        save_wav(output_file, audio, main_rate)
+
+        return sample_rate
 
 
 def pad(audio_buffer, window):
@@ -858,4 +859,4 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=False):
     # Calculate samples from samples_in_mel (matching Go: samples = samples_in_mel * stride)
     samples = samples_in_mel * stride
     
-    return buf, samples, sample_rate
+    return buf, samples, sample_rate, num_freqs
