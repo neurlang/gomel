@@ -17,7 +17,7 @@ class Phase:
     """Phase-preserving spectrogram encoder/decoder."""
     
     def __init__(self, sample_rate=None, num_freqs=None, window=1280, 
-                 resolut=4096, y_reverse=True, volume_boost=0.0, HDR=False, IHS=False):
+                 resolut=4096, y_reverse=True, volume_boost=0.0, HDR=False, IHS=0):
         """
         Initialize Phase encoder/decoder.
         
@@ -29,7 +29,7 @@ class Phase:
             y_reverse: Flip Y-axis in PNG images (default: True)
             volume_boost: Volume multiplier for reconstruction (default: 0.0 = no boost)
             HDR: Use 16 bits per channel PNG (default: False = 8 bits per channel)
-            IHS: Apply inverse hyperbolic sine compression before quantization (default: False)
+            IHS: Number of inverse hyperbolic sine passes before quantization (default: 0 = disabled)
         """
         self.sample_rate = sample_rate
         self.window = window
@@ -660,7 +660,7 @@ def unpack_bytes_to_float64(byte_data):
     return np.float64(float16_value)
 
 
-def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y_reverse=True, hdr=False, ihs=False):
+def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y_reverse=True, hdr=False, ihs=0):
     """
     Save phase-preserving spectrogram as PNG image with embedded metadata.
     
@@ -672,10 +672,10 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
         sample_rate: Audio sample rate
         y_reverse: Flip Y-axis if True (default: True)
         hdr: Use 16 bits per channel if True, 8 bits if False (default: False)
-        ihs: Apply inverse hyperbolic sine compression before quantization (default: False)
+        ihs: Number of inverse hyperbolic sine passes before quantization (default: 0)
     """
     # Apply asinh compression if enabled
-    if ihs:
+    for _ in range(ihs):
         spectrogram = np.arcsinh(spectrogram)
     # Calculate stride (time frames) from spectrogram length and num_freqs
     stride = len(spectrogram) // num_freqs
@@ -763,7 +763,7 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
         img.save(file_path, format='PNG')
 
 
-def load_image(file_path, y_reverse=True, hdr=False, ihs=False):
+def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
     """
     Load phase-preserving spectrogram from PNG image with embedded metadata.
     
@@ -771,7 +771,7 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=False):
         file_path: Path to PNG file
         y_reverse: Flip Y-axis if True (default: True)
         hdr: Expect 16 bits per channel if True, 8 bits if False (default: False)
-        ihs: Undo inverse hyperbolic sine compression after dequantization (default: False)
+        ihs: Number of inverse hyperbolic sine passes to undo after dequantization (default: 0)
         
     Returns:
         Tuple of (spectrogram, samples, sample_rate) where:
@@ -853,7 +853,7 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=False):
         buf[i][2] = (buf[i][2] * (max_values[2] - min_values[2]) + min_values[2])
     
     # Undo asinh compression if enabled
-    if ihs:
+    for _ in range(ihs):
         buf = np.sinh(buf)
     
     # Calculate samples from samples_in_mel (matching Go: samples = samples_in_mel * stride)
