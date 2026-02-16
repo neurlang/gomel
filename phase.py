@@ -836,6 +836,12 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
     samples_in_mel = metadata[6]
     sample_rate = int(metadata[7])
     
+    # Replace metadata pixels (blue channel, x=0, high-y rows) with the pixel just below
+    meta_start = num_freqs - num_meta_bytes
+    donor_y = meta_start - 1 if meta_start > 0 else 0
+    for i in range(num_meta_bytes):
+        img_array[meta_start + i, 0, 2] = img_array[donor_y, 0, 2]
+    
     # Create output buffer matching Go layout: buf[y+x*mels]
     buf = []
     for x in range(stride):
