@@ -712,17 +712,21 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     image_data = np.zeros((num_freqs, stride, 3), dtype=dtype)
     
     # Normalize each channel to 0-max_val range
+    # Blue channel (ch 2) is skipped since it equals -red channel (ch 0)
+    # and will be reconstructed on load.
     for x in range(stride):
         for y in range(num_freqs):
             idx = y + x * num_freqs  # Go layout: buf[y+x*mels]
             
-            for ch in range(3):
+            for ch in range(2):  # Only red and green channels
                 channel_range = max_values[ch] - min_values[ch]
                 if channel_range > 0:
                     val = (spectrogram[idx][ch] - min_values[ch]) / channel_range
                     image_data[y, x, ch] = min(max_val, max(0, int(max_val * val)))
                 else:
                     image_data[y, x, ch] = max_val // 2
+            
+            # Blue channel left as 0 (will be reconstructed as -red on load)
             
             # Embed metadata in first column (x=0) blue channel
             # Place at high-y end so it appears at top-left after y_reverse flip
@@ -853,11 +857,12 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
     
     buf = np.array(buf, dtype=np.float64)
     
-    # Denormalize from 0-1 to original range using metadata
+    # Denormalize red and green from 0-1 to original range using metadata
     for i in range(len(buf)):
         buf[i][0] = (buf[i][0] * (max_values[0] - min_values[0]) + min_values[0])
         buf[i][1] = (buf[i][1] * (max_values[1] - min_values[1]) + min_values[1])
-        buf[i][2] = (buf[i][2] * (max_values[2] - min_values[2]) + min_values[2])
+        # Blue channel = negative red channel (imag(v1) = -imag(v0))
+        buf[i][2] = -buf[i][0]
     
     # Undo asinh compression if enabled
     for _ in range(ihs):
