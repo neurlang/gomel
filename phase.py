@@ -145,7 +145,9 @@ class Phase:
                 frame = padded_audio[start:end] * hann_window
                 stft_result[:, i] = np.fft.fft(frame)
         
-        # Subtask 5.2: Extract 3-channel phase representation from STFT
+        # Subtask 5.2: Extract 2-channel phase representation from STFT
+        # Blue channel (realm1 = imag(v1)) is redundant since realm1 = -realn1
+        # due to conjugate symmetry of real signals
         time_frames = stft_result.shape[1]
         num_bins = self.resolut // 2
         
@@ -154,7 +156,8 @@ class Phase:
         
         # For each time frame and frequency bin:
         # v0 = spectrum[j+1], v1 = spectrum[resolut-j-1]
-        # realn1 = imag(v0), realm0 = real(v1), realm1 = imag(v1)
+        # realn1 = imag(v0), realm0 = real(v1)
+        # Note: realm1 = imag(v1) = -imag(v0) = -realn1 (not stored)
         for t in range(time_frames):
             for j in range(num_bins):
                 v0 = stft_result[j + 1, t]
@@ -162,9 +165,8 @@ class Phase:
                 
                 realn1 = np.imag(v0)
                 realm0 = np.real(v1)
-                realm1 = np.imag(v1)
                 
-                phase_repr.append([realn1, realm0, realm1])
+                phase_repr.append([realn1, realm0])
         
         phase_repr = np.array(phase_repr, dtype=np.float64)
         
@@ -179,7 +181,7 @@ class Phase:
         Reconstruct audio from phase-preserving spectrogram.
         
         Args:
-            spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+            spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
             
         Returns:
             1D numpy array of float64 audio samples
@@ -188,7 +190,8 @@ class Phase:
         # Expand from num_freqs bins to resolut/2 bins
         grown = grow(spectrogram, self.resolut, self.num_freqs)
         
-        # Subtask 6.2: Reconstruct complex spectrum from 3-channel representation
+        # Subtask 6.2: Reconstruct complex spectrum from 2-channel representation
+        # realm1 = -realn1 due to conjugate symmetry
         num_bins = self.resolut // 2
         time_frames = len(grown) // num_bins
         
@@ -196,16 +199,14 @@ class Phase:
         spectrum = np.zeros((self.resolut, time_frames), dtype=np.complex128)
         
         # For each time frame and frequency bin:
-        # Reconstruct v0 = complex(realm0, realn1) and v1 = complex(realm0, realm1)
+        # Reconstruct v0 = complex(realm0, realn1) and v1 = complex(realm0, -realn1)
         # Place v0 at spectrum[j+1] and v1 at spectrum[resolut-j-1]
-        # Go layout is: for i in range(spectrum), for j in range(resolut/2)
-        # which means index = i*(resolut/2) + j where i is time frame
         for i in range(time_frames):
             for j in range(num_bins):
                 index = i * num_bins + j
                 realn1 = grown[index][0]
                 realm0 = grown[index][1]
-                realm1 = grown[index][2]
+                realm1 = -realn1  # Conjugate symmetry
                 
                 # Reconstruct complex values
                 v0 = complex(realm0, realn1)
@@ -413,7 +414,7 @@ def spectral_normalize(spectrogram):
     Apply spectral normalization using log2 transformation.
     
     Args:
-        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
         
     Returns:
         Normalized spectrogram with log2 transformation applied
@@ -430,12 +431,12 @@ def spectral_denormalize(spectrogram):
     Apply spectral denormalization using exp2 transformation (inverse of normalize).
     
     Args:
-        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
         
     Returns:
         Denormalized spectrogram with exp2 transformation applied
     """
-    # Apply exp2 to all 3 channels (inverse of log2)
+    # Apply exp2 to all 2 channels (inverse of log2)
     return np.exp2(spectrogram)
 
 
@@ -444,12 +445,12 @@ def shrink(spectrogram, resolut, num_freqs):
     Reduce frequency bins from resolut/2 to num_freqs.
     
     Args:
-        spectrogram: 2D numpy array of shape (time_frames * resolut/2, 3)
+        spectrogram: 2D numpy array of shape (time_frames * resolut/2, 2)
         resolut: FFT resolution
         num_freqs: Target number of frequency bins
         
     Returns:
-        Shrunken spectrogram of shape (time_frames * num_freqs, 3)
+        Shrunken spectrogram of shape (time_frames * num_freqs, 2)
     """
     # Go implementation: keep only entries where (i % imels) < omels
     # This means: for each time frame, keep only the first num_freqs frequency bins
@@ -469,12 +470,12 @@ def grow(spectrogram, resolut, num_freqs):
     Expand frequency bins from num_freqs to resolut/2.
     
     Args:
-        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
         resolut: FFT resolution
         num_freqs: Current number of frequency bins
         
     Returns:
-        Expanded spectrogram of shape (time_frames * resolut/2, 3)
+        Expanded spectrogram of shape (time_frames * resolut/2, 2)
     """
     # Go implementation: append each entry, and when we reach the end of a frame (j+1 == imels),
     # replicate the last entry to fill the rest of the frame
@@ -667,7 +668,7 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     
     Args:
         file_path: Path to output PNG file
-        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
         num_freqs: Number of frequency bins
         samples_in_mel: Ratio of samples to mel (for reconstruction)
         sample_rate: Audio sample rate
@@ -681,12 +682,12 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     # Calculate stride (time frames) from spectrogram length and num_freqs
     stride = len(spectrogram) // num_freqs
     
-    # Calculate max/min values for each of 3 channels
-    max_values = np.array([-np.inf, -np.inf, -np.inf], dtype=np.float64)
-    min_values = np.array([np.inf, np.inf, np.inf], dtype=np.float64)
+    # Calculate max/min values for each of 2 channels
+    max_values = np.array([-np.inf, -np.inf], dtype=np.float64)
+    min_values = np.array([np.inf, np.inf], dtype=np.float64)
     
     for x in range(stride):
-        for l in range(3):
+        for l in range(2):
             for y in range(num_freqs):
                 w = spectrogram[y + x * num_freqs][l]
                 if w > max_values[l]:
@@ -694,10 +695,11 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
                 if w < min_values[l]:
                     min_values[l] = w
     
-    # Pack metadata: [max0, max1, max2, min0, min1, min2, samples_in_mel, sample_rate]
+    # Pack metadata: [max0, max1, min0, min1, samples_in_mel, sample_rate]
+    # Note: we removed max2/min2 since blue channel is no longer stored
     metadata = [
-        max_values[0], max_values[1], max_values[2],
-        min_values[0], min_values[1], min_values[2],
+        max_values[0], max_values[1],
+        min_values[0], min_values[1],
         samples_in_mel, sample_rate
     ]
     
@@ -712,8 +714,7 @@ def save_image(file_path, spectrogram, num_freqs, samples_in_mel, sample_rate, y
     image_data = np.zeros((num_freqs, stride, 3), dtype=dtype)
     
     # Normalize each channel to 0-max_val range
-    # Blue channel (ch 2) is skipped since it equals -red channel (ch 0)
-    # and will be reconstructed on load.
+    # Blue channel (ch 2) is not stored (left as 0, except for metadata)
     for x in range(stride):
         for y in range(num_freqs):
             idx = y + x * num_freqs  # Go layout: buf[y+x*mels]
@@ -779,10 +780,11 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
         ihs: Number of inverse hyperbolic sine passes to undo after dequantization (default: 0)
         
     Returns:
-        Tuple of (spectrogram, samples, sample_rate) where:
-        - spectrogram: 2D numpy array of shape (time_frames * num_freqs, 3)
+        Tuple of (spectrogram, samples, sample_rate, num_freqs) where:
+        - spectrogram: 2D numpy array of shape (time_frames * num_freqs, 2)
         - samples: Original audio length in samples
         - sample_rate: Audio sample rate
+        - num_freqs: Number of frequency bins
     """
     max_val = 65535 if hdr else 255
     
@@ -821,24 +823,24 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
         img_array = np.array(img)  # Shape: (height, width, 3)
     
     # Extract metadata from first column (x=0) blue channel (stored at high-y end)
-    # 8 float16 values = 16 bytes stored in the last 16 rows
-    num_meta_bytes = 16
+    # 6 float16 values = 12 bytes stored in the last 12 rows (was 16 bytes for 8 values)
+    num_meta_bytes = 12
     floats = []
     for i in range(num_meta_bytes):
         y = num_freqs - num_meta_bytes + i
         floats.append(int(img_array[y, 0, 2]))
     
-    # Unpack 8 float16 values for metadata
+    # Unpack 6 float16 values for metadata
     metadata = []
-    for i in range(8):
+    for i in range(6):
         byte_pair = bytes([floats[i * 2] & 0xFF, floats[i * 2 + 1] & 0xFF])
         value = unpack_bytes_to_float64(byte_pair)
         metadata.append(value)
     
-    max_values = np.array([metadata[0], metadata[1], metadata[2]])
-    min_values = np.array([metadata[3], metadata[4], metadata[5]])
-    samples_in_mel = metadata[6]
-    sample_rate = int(metadata[7])
+    max_values = np.array([metadata[0], metadata[1]])
+    min_values = np.array([metadata[2], metadata[3]])
+    samples_in_mel = metadata[4]
+    sample_rate = int(metadata[5])
     
     # Replace metadata pixels (blue channel, x=0, high-y rows) with the pixel just below
     meta_start = num_freqs - num_meta_bytes
@@ -847,13 +849,13 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
         img_array[meta_start + i, 0, 2] = img_array[donor_y, 0, 2]
     
     # Create output buffer matching Go layout: buf[y+x*mels]
+    # Only store 2 channels (red and green)
     buf = []
     for x in range(stride):
         for y in range(num_freqs):
             val0 = float(img_array[y, x, 0]) / float(max_val)
             val1 = float(img_array[y, x, 1]) / float(max_val)
-            val2 = float(img_array[y, x, 2]) / float(max_val)
-            buf.append([val0, val1, val2])
+            buf.append([val0, val1])
     
     buf = np.array(buf, dtype=np.float64)
     
@@ -861,8 +863,6 @@ def load_image(file_path, y_reverse=True, hdr=False, ihs=0):
     for i in range(len(buf)):
         buf[i][0] = (buf[i][0] * (max_values[0] - min_values[0]) + min_values[0])
         buf[i][1] = (buf[i][1] * (max_values[1] - min_values[1]) + min_values[1])
-        # Blue channel = negative red channel (imag(v1) = -imag(v0))
-        buf[i][2] = -buf[i][0]
     
     # Undo asinh compression if enabled
     for _ in range(ihs):
