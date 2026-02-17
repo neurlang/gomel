@@ -48,7 +48,7 @@ func unpackBytesToFloat64(bytes []byte) float64 {
 	return f
 }
 
-func loadpng(name string, reverse bool) (buf [][3]float64, samples, samplerate float64) {
+func loadpng(name string, reverse bool, ihsPasses int) (buf [][3]float64, samples, samplerate float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
@@ -105,10 +105,29 @@ func loadpng(name string, reverse bool) (buf [][3]float64, samples, samplerate f
 		unpackBytesToFloat64(floats[12:14]),
 		unpackBytesToFloat64(floats[14:16])
 
+	// Replace metadata pixels (blue channel, x=0, high-y rows) with the pixel just below
+	metaStart := mels - 16
+	donorY := metaStart - 1
+	if donorY < 0 {
+		donorY = 0
+	}
+	for i := metaStart; i < mels; i++ {
+		buf[i][2] = buf[donorY][2]
+	}
+
 	for i := range buf {
 		buf[i][0] = (buf[i][0]*(mgc_max0-mgc_min0) + mgc_min0)
 		buf[i][1] = (buf[i][1]*(mgc_max1-mgc_min1) + mgc_min1)
 		buf[i][2] = (buf[i][2]*(mgc_max2-mgc_min2) + mgc_min2)
+	}
+
+	// Undo asinh compression
+	for p := 0; p < ihsPasses; p++ {
+		for i := range buf {
+			for l := 0; l < 3; l++ {
+				buf[i][l] = math.Sinh(buf[i][l])
+			}
+		}
 	}
 
 	samples = samples_in_mel * float64(bounds.Max.X-bounds.Min.X)
@@ -130,7 +149,16 @@ func joinBytes(b ...[]byte) (ret []byte) {
 	return ret
 }
 
-func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in_mel, sr float64) error {
+func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in_mel, sr float64, ihsPasses int) error {
+
+	// Apply asinh compression
+	for p := 0; p < ihsPasses; p++ {
+		for i := range buf {
+			for l := 0; l < 3; l++ {
+				buf[i][l] = math.Asinh(buf[i][l])
+			}
+		}
+	}
 
 	f, err := os.Create(name)
 	if err != nil {
