@@ -322,6 +322,36 @@ class Phase:
         save_image(output_file, spectrogram, self.num_freqs, samples_in_mel, 
                    sample_rate, self.y_reverse, self.HDR, self.IHS)
     
+
+    def to_tensor_flac(self, input_file):
+        """
+        Convert FLAC file to tensor.
+        
+        Args:
+            input_file: Path to input FLAC file
+        """
+        # Load FLAC file using load_flac_with_sr()
+        audio, sample_rate = load_flac_with_sr(input_file)
+        
+        self.reconfigure_sr(sample_rate=sample_rate)
+
+        # Apply zero stuffing upsampling if configured
+        zero_pad = self.zero_pad(sample_rate)
+        zero_shift = self.zero_shift(sample_rate)
+        if zero_pad > 0:
+            original_len = len(audio)
+            audio = zero_stuff_upsample(audio, zero_pad, zero_shift)
+            # Update sample rate based on actual upsampling ratio
+            sample_rate = int(sample_rate * len(audio) / original_len)
+        
+        # Store original length for padding detection
+        original_length = len(audio)
+        
+        # Call to_phase() to generate spectrogram
+        spectrogram = self.to_phase(audio)
+
+        return spectrogram
+
     def to_wav_png(self, input_file, output_file):
         """
         Convert PNG spectrogram to WAV file.
