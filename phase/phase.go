@@ -38,14 +38,14 @@ func (m *Phase) ihsPasses() int {
 var ErrFileNotLoaded = errors.New("wavNotLoaded")
 
 // ToPhase generates a phase-preserving spectrogram from a wave buffer and returns the spectrogram buffer.
-func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
+func (m *Phase) ToPhase(buf []float64) ([][2]float64, error) {
 
 	buf = pad(buf, m.Window)
 
 	stft := stft.New(m.Window, m.Resolut)
 
 	spectrum := stft.STFT(buf)
-	var ospectrum [][3]float64
+	var ospectrum [][2]float64
 
 	for i := range spectrum {
 		for j := 0; j < m.Resolut/2; j++ {
@@ -56,9 +56,9 @@ func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
 			var realn1 = imag(v0)
 
 			var realm0 = real(v1)
-			var realm1 = imag(v1)
+			// realm1 = imag(v1) = -realn1 (conjugate symmetry, not stored)
 
-			ospectrum = append(ospectrum, [3]float64{realn1, realm0, realm1})
+			ospectrum = append(ospectrum, [2]float64{realn1, realm0})
 
 		}
 	}
@@ -69,7 +69,7 @@ func (m *Phase) ToPhase(buf []float64) ([][3]float64, error) {
 
 }
 
-func (m *Phase) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
+func (m *Phase) undospectrum(ospectrum [][2]float64) (spectrum [][]complex128) {
 	spectrum = make([][]complex128, len(ospectrum)/(m.Resolut/2))
 
 	for i := range spectrum {
@@ -78,7 +78,7 @@ func (m *Phase) undospectrum(ospectrum [][3]float64) (spectrum [][]complex128) {
 			index := i*(m.Resolut/2) + j
 			realn1 := ospectrum[index][0]
 			realm0 := ospectrum[index][1]
-			realm1 := ospectrum[index][2]
+			realm1 := -realn1 // Conjugate symmetry
 
 			v0 := complex(realm0, realn1) // cos
 			v1 := complex(realm0, realm1) // sin
@@ -133,7 +133,7 @@ func ISTFT(s *stft.STFT, spectrogram [][]complex128, numIterations int) []float6
 }
 
 // FromPhase generates a wave buffer from a Phase spectrogram and returns the wave buffer.
-func (m *Phase) FromPhase(ospectrum [][3]float64) ([]float64, error) {
+func (m *Phase) FromPhase(ospectrum [][2]float64) ([]float64, error) {
 
 	stft1 := stft.New(m.Window, m.Resolut)
 
@@ -187,7 +187,7 @@ func SaveWav(outputFile string, vec []float64, sr int) error {
 	return dumpwav(outputFile, vec, sr)
 }
 
-func (m *Phase) Image(buf [][3]float64) []uint16 {
+func (m *Phase) Image(buf [][2]float64) []uint16 {
 	return dumpbuffer(buf, m.NumFreqs)
 }
 

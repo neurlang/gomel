@@ -12,10 +12,10 @@ import "github.com/x448/float16"
 import "math"
 import "encoding/binary"
 
-func dumpbuffer(buf [][3]float64, mels int) (out []uint16) {
+func dumpbuffer(buf [][2]float64, mels int) (out []uint16) {
 	stride := len(buf) / mels
 
-	var mgc_max, mgc_min = [3]float64{(-99999999.), (-99999999.), (-99999999.)}, [3]float64{(9999999.), (9999999.), (9999999.)}
+	var mgc_max, mgc_min = [2]float64{(-99999999.), (-99999999.)}, [2]float64{(9999999.), (9999999.)}
 
 	for l := 0; l < 2; l++ {
 		for x := 0; x < stride; x++ {
@@ -48,7 +48,7 @@ func unpackBytesToFloat64(bytes []byte) float64 {
 	return f
 }
 
-func loadpng(name string, reverse bool, ihsPasses int, hdr bool) (buf [][3]float64, samples, samplerate float64) {
+func loadpng(name string, reverse bool, ihsPasses int, hdr bool) (buf [][2]float64, samples, samplerate float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
@@ -96,25 +96,25 @@ func loadpng(name string, reverse bool, ihsPasses int, hdr bool) (buf [][3]float
 				}
 			}
 
-			var val0, val1, val2 float64
+			var val0, val1 float64
 			if hdr {
 				// RGBA() returns 16-bit values (0-65535) for all image types
 				val0 = float64(r) / float64(maxVal)
 				val1 = float64(g) / float64(maxVal)
-				val2 = float64(b) / float64(maxVal)
+				// val2 (blue) not stored, will be reconstructed as -val0
 			} else {
 				// For 8-bit, RGBA() still returns 16-bit, so shift down
 				val0 = float64(r>>8) / 255
 				val1 = float64(g>>8) / 255
-				val2 = float64(b>>8) / 255
+				// val2 (blue) not stored, will be reconstructed as -val0
 			}
 
-			val := [3]float64{val0, val1, val2}
+			val := [2]float64{val0, val1}
 
 			buf = append(buf, val)
 		}
 	}
-	var mgc_max0, mgc_max1, mgc_max2, mgc_min0, mgc_min1, mgc_min2, samples_in_mel, sr = unpackBytesToFloat64(floats[0:2]),
+	var mgc_max0, mgc_max1, _, mgc_min0, mgc_min1, _, samples_in_mel, sr = unpackBytesToFloat64(floats[0:2]),
 		unpackBytesToFloat64(floats[2:4]),
 		unpackBytesToFloat64(floats[4:6]),
 		unpackBytesToFloat64(floats[6:8]),
@@ -124,25 +124,23 @@ func loadpng(name string, reverse bool, ihsPasses int, hdr bool) (buf [][3]float
 		unpackBytesToFloat64(floats[14:16])
 
 	// Replace metadata pixels (blue channel, x=0, high-y rows) with the pixel just below
+	// Note: Blue channel not stored in 2-channel format, so no replacement needed
 	metaStart := mels - 16
 	donorY := metaStart - 1
 	if donorY < 0 {
 		donorY = 0
 	}
-	for i := metaStart; i < mels; i++ {
-		buf[i][2] = buf[donorY][2]
-	}
+	// No-op: blue channel will be reconstructed as -red
 
 	for i := range buf {
 		buf[i][0] = (buf[i][0]*(mgc_max0-mgc_min0) + mgc_min0)
 		buf[i][1] = (buf[i][1]*(mgc_max1-mgc_min1) + mgc_min1)
-		buf[i][2] = (buf[i][2]*(mgc_max2-mgc_min2) + mgc_min2)
 	}
 
 	// Undo asinh compression
 	for p := 0; p < ihsPasses; p++ {
 		for i := range buf {
-			for l := 0; l < 3; l++ {
+			for l := 0; l < 2; l++ {
 				buf[i][l] = math.Sinh(buf[i][l])
 			}
 		}
@@ -167,12 +165,12 @@ func joinBytes(b ...[]byte) (ret []byte) {
 	return ret
 }
 
-func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in_mel, sr float64, ihsPasses int, hdr bool) error {
+func dumpimage(name string, buf [][2]float64, mels int, reverse bool, samples_in_mel, sr float64, ihsPasses int, hdr bool) error {
 
 	// Apply asinh compression
 	for p := 0; p < ihsPasses; p++ {
 		for i := range buf {
-			for l := 0; l < 3; l++ {
+			for l := 0; l < 2; l++ {
 				buf[i][l] = math.Asinh(buf[i][l])
 			}
 		}
@@ -197,10 +195,10 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 		img = image.NewNRGBA(image.Rect(0, 0, stride, mels))
 	}
 
-	var mgc_max, mgc_min = [3]float64{(-math.MaxFloat64), (-math.MaxFloat64), (-math.MaxFloat64)}, [3]float64{(math.MaxFloat64), (math.MaxFloat64), (math.MaxFloat64)}
+	var mgc_max, mgc_min = [2]float64{(-math.MaxFloat64), (-math.MaxFloat64)}, [2]float64{(math.MaxFloat64), (math.MaxFloat64)}
 
 	for x := 0; x < stride; x++ {
-		for l := 0; l < 3; l++ {
+		for l := 0; l < 2; l++ {
 			for y := 0; y < mels; y++ {
 				var w = buf[y+x*mels][l]
 				if w > mgc_max[l] {
@@ -215,10 +213,10 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 	var floats = joinBytes(
 		packFloat16ToBytes(mgc_max[0]),
 		packFloat16ToBytes(mgc_max[1]),
-		packFloat16ToBytes(mgc_max[2]),
+		packFloat16ToBytes(0), // Placeholder for removed channel
 		packFloat16ToBytes(mgc_min[0]),
 		packFloat16ToBytes(mgc_min[1]),
-		packFloat16ToBytes(mgc_min[2]),
+		packFloat16ToBytes(0), // Placeholder for removed channel
 		packFloat16ToBytes(samples_in_mel),
 		packFloat16ToBytes(sr),
 	)
@@ -228,7 +226,7 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 		for y := 0; y < mels; y++ {
 			val0 := (buf[y+x*mels][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
 			val1 := (buf[y+x*mels][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
-			val2 := (buf[y+x*mels][2] - mgc_min[2]) / (mgc_max[2] - mgc_min[2])
+			val2 := -val0 // Blue channel reconstructed from conjugate symmetry
 
 			metaStart := mels - len(floats)
 			
@@ -382,7 +380,7 @@ func loadflac(name string) (out []float64, sr float64) {
 	return
 }
 
-func shrink(ospectrum [][3]float64, imels, omels int) (out [][3]float64) {
+func shrink(ospectrum [][2]float64, imels, omels int) (out [][2]float64) {
 	for i := range ospectrum {
 		j := i % imels
 		if j < omels {
@@ -391,7 +389,7 @@ func shrink(ospectrum [][3]float64, imels, omels int) (out [][3]float64) {
 	}
 	return
 }
-func grow(ospectrum [][3]float64, imels, omels int) (out [][3]float64) {
+func grow(ospectrum [][2]float64, imels, omels int) (out [][2]float64) {
 	for i := range ospectrum {
 		j := i % imels
 		out = append(out, ospectrum[i])
@@ -404,8 +402,8 @@ func grow(ospectrum [][3]float64, imels, omels int) (out [][3]float64) {
 	return
 }
 
-func spectral_normalize(buf [][3]float64) {
-	for l := 0; l < 3; l++ {
+func spectral_normalize(buf [][2]float64) {
+	for l := 0; l < 2; l++ {
 		for i := range buf {
 			if buf[i][l] < 1e-10 {
 				buf[i][l] = 1e-10
@@ -415,8 +413,8 @@ func spectral_normalize(buf [][3]float64) {
 	}
 }
 
-func spectral_denormalize(buf [][3]float64) {
-	for l := 0; l < 3; l++ {
+func spectral_denormalize(buf [][2]float64) {
+	for l := 0; l < 2; l++ {
 		for i := range buf {
 			buf[i][l] = float64(math.Exp2(float64(buf[i][l])))
 		}
