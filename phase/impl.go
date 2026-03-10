@@ -474,3 +474,58 @@ func isPadded(originalLen, paddedLen, filter int) bool {
 		return paddedLen == originalLen+padLen
 	}
 }
+
+func padShift(sampleRate int) (zeroPad, zeroShift int) {
+	// 48000 family
+	if sampleRate == 48000 {
+		return 0, 0
+	}
+	if sampleRate == 32000 {
+		return 2, 1 // 1.5x
+	}
+	if sampleRate == 24000 {
+		return 1, 1 // 2x
+	}
+	if sampleRate == 16000 {
+		return 1, 2 // 3x
+	}
+	if sampleRate == 8000 {
+		return 1, 5 // 6x
+	}
+	// 44100 family
+	if sampleRate == 44100 {
+		return 0, 0
+	}
+	if sampleRate == 22050 {
+		return 1, 1 // 2x
+	}
+	if sampleRate == 11025 {
+		return 1, 3 // 4x
+	}
+	return 0, 0
+}
+
+func zeroStuffUpsample(audio []float64, zeroPad, zeroShift int) []float64 {
+	if zeroPad == 0 {
+		return audio
+	}
+
+	// Calculate output length
+	numGroups := (len(audio) + zeroPad - 1) / zeroPad
+	outputLen := len(audio) + numGroups*zeroShift
+	output := make([]float64, outputLen)
+
+	// Insert original samples with zeros in between
+	outIdx := 0
+	boost := float64(1 + zeroShift) // Compensate for energy loss
+	for i := 0; i < len(audio); i++ {
+		output[outIdx] = audio[i] * boost
+		outIdx++
+		// After every zeroPad samples, insert zeroShift zeros
+		if (i+1)%zeroPad == 0 {
+			outIdx += zeroShift
+		}
+	}
+
+	return output
+}

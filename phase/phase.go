@@ -199,12 +199,20 @@ func (m *Phase) ToPhaseFlac(inputFile, outputFile string) error {
 		return ErrFileNotLoaded
 	}
 
+	originalLength := len(buf)
+	
+	// Apply zero-stuffing upsampling if needed
+	zeroPad, zeroShift := padShift(int(sr))
+	if zeroPad > 0 {
+		buf = zeroStuffUpsample(buf, zeroPad, zeroShift)
+	}
+
 	ospectrum, err := m.ToPhase(buf)
 	if err != nil {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
+	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(originalLength*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
 
 	return nil
 }
@@ -217,12 +225,20 @@ func (m *Phase) ToPhaseWav(inputFile, outputFile string) error {
 		return ErrFileNotLoaded
 	}
 
+	originalLength := len(buf)
+	
+	// Apply zero-stuffing upsampling if needed
+	zeroPad, zeroShift := padShift(int(sr))
+	if zeroPad > 0 {
+		buf = zeroStuffUpsample(buf, zeroPad, zeroShift)
+	}
+
 	ospectrum, err := m.ToPhase(buf)
 	if err != nil {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
+	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(originalLength*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
 
 	return nil
 }
@@ -242,8 +258,15 @@ func (m *Phase) ToWavPng(inputFile, outputFile string) error {
 	if int(samples) > 0 && isPadded(int(samples), len(owave), m.Window) && len(owave) > int(samples) {
 		owave = owave[0:int(samples)]
 	}
+	
+	// Determine main rate based on NumFreqs (48000 family or 44100 family)
+	mainRate := 48000
+	if m.NumFreqs == 836 || m.NumFreqs == 836*2 {
+		mainRate = 44100
+	}
+	
 	if samplerate != 0 && m.SampleRate == 0 {
-		m.SampleRate = int(samplerate)
+		m.SampleRate = mainRate
 	}
 
 	dumpwav(outputFile, owave, m.SampleRate)
