@@ -14,6 +14,7 @@ type Phase struct {
 	SampleRate  int
 	VolumeBoost float64
 	IHS         bool
+	HDR         bool
 }
 
 // NewPhase creates a new Phase instance with default values.
@@ -28,7 +29,7 @@ func NewPhase() *Phase {
 
 // ihsPasses returns the number of asinh/sinh passes (2 for 8-bit when IHS enabled, 0 otherwise).
 func (m *Phase) ihsPasses() int {
-	if m.IHS {
+	if m.IHS && !m.HDR {
 		return 2
 	}
 	return 0
@@ -203,7 +204,7 @@ func (m *Phase) ToPhaseFlac(inputFile, outputFile string) error {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses())
+	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
 
 	return nil
 }
@@ -221,14 +222,14 @@ func (m *Phase) ToPhaseWav(inputFile, outputFile string) error {
 		return err
 	}
 
-	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses())
+	dumpimage(outputFile, ospectrum, m.NumFreqs, m.YReverse, float64(len(buf)*m.NumFreqs)/float64(len(ospectrum)), float64(sr), m.ihsPasses(), m.HDR)
 
 	return nil
 }
 
 func (m *Phase) ToWavPng(inputFile, outputFile string) error {
 
-	var buf, samples, samplerate = loadpng(inputFile, m.YReverse, m.ihsPasses())
+	var buf, samples, samplerate = loadpng(inputFile, m.YReverse, m.ihsPasses(), m.HDR)
 	if len(buf) == 0 {
 		return ErrFileNotLoaded
 	}

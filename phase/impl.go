@@ -48,7 +48,7 @@ func unpackBytesToFloat64(bytes []byte) float64 {
 	return f
 }
 
-func loadpng(name string, reverse bool, ihsPasses int) (buf [][3]float64, samples, samplerate float64) {
+func loadpng(name string, reverse bool, ihsPasses int, hdr bool) (buf [][3]float64, samples, samplerate float64) {
 	// Open the PNG file
 	file, err := os.Open(name)
 	if err != nil {
@@ -67,6 +67,10 @@ func loadpng(name string, reverse bool, ihsPasses int) (buf [][3]float64, sample
 	// Get the bounds of the image
 	bounds := img.Bounds()
 	mels := bounds.Max.Y - bounds.Min.Y
+	maxVal := 65535
+	if !hdr {
+		maxVal = 255
+	}
 	var floats []byte
 	for x := bounds.Min.X; x < bounds.Max.X; x++ {
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -84,12 +88,26 @@ func loadpng(name string, reverse bool, ihsPasses int) (buf [][3]float64, sample
 			// Extract metadata from first column (x=0) blue channel at high-y end
 			metaStart := mels - 16
 			if x == 0 && y >= metaStart {
-				floats = append(floats, byte(b>>8))
+				if hdr {
+					// For HDR, metadata bytes are stored as uint16 values (0-255 range)
+					floats = append(floats, byte(b&0xFF))
+				} else {
+					floats = append(floats, byte(b>>8))
+				}
 			}
 
-			val0 := float64(r>>8) / 255
-			val1 := float64(g>>8) / 255
-			val2 := float64(b>>8) / 255
+			var val0, val1, val2 float64
+			if hdr {
+				// RGBA() returns 16-bit values (0-65535) for all image types
+				val0 = float64(r) / float64(maxVal)
+				val1 = float64(g) / float64(maxVal)
+				val2 = float64(b) / float64(maxVal)
+			} else {
+				// For 8-bit, RGBA() still returns 16-bit, so shift down
+				val0 = float64(r>>8) / 255
+				val1 = float64(g>>8) / 255
+				val2 = float64(b>>8) / 255
+			}
 
 			val := [3]float64{val0, val1, val2}
 
@@ -149,7 +167,7 @@ func joinBytes(b ...[]byte) (ret []byte) {
 	return ret
 }
 
-func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in_mel, sr float64, ihsPasses int) error {
+func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in_mel, sr float64, ihsPasses int, hdr bool) error {
 
 	// Apply asinh compression
 	for p := 0; p < ihsPasses; p++ {
@@ -167,7 +185,17 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 
 	stride := len(buf) / mels
 
-	img := image.NewNRGBA(image.Rect(0, 0, stride, mels))
+	maxVal := 65535
+	if !hdr {
+		maxVal = 255
+	}
+
+	var img image.Image
+	if hdr {
+		img = image.NewNRGBA64(image.Rect(0, 0, stride, mels))
+	} else {
+		img = image.NewNRGBA(image.Rect(0, 0, stride, mels))
+	}
 
 	var mgc_max, mgc_min = [3]float64{(-math.MaxFloat64), (-math.MaxFloat64), (-math.MaxFloat64)}, [3]float64{(math.MaxFloat64), (math.MaxFloat64), (math.MaxFloat64)}
 
@@ -198,26 +226,43 @@ func dumpimage(name string, buf [][3]float64, mels int, reverse bool, samples_in
 	//println(mgc_max[0], mgc_min[0])
 	for x := 0; x < stride; x++ {
 		for y := 0; y < mels; y++ {
-			var col color.NRGBA
 			val0 := (buf[y+x*mels][0] - mgc_min[0]) / (mgc_max[0] - mgc_min[0])
 			val1 := (buf[y+x*mels][1] - mgc_min[1]) / (mgc_max[1] - mgc_min[1])
 			val2 := (buf[y+x*mels][2] - mgc_min[2]) / (mgc_max[2] - mgc_min[2])
 
-			col.R = uint8(int(255 * val0))
-			col.G = uint8(int(255 * val1))
-			// Embed metadata in first column (x=0) blue channel at high-y end
-			// so it appears at top-left corner after y_reverse flip
 			metaStart := mels - len(floats)
-			if x == 0 && y >= metaStart {
-				col.B = uint8(int(floats[y-metaStart]))
+			
+			if hdr {
+				var col color.NRGBA64
+				col.R = uint16(int(float64(maxVal) * val0))
+				col.G = uint16(int(float64(maxVal) * val1))
+				if x == 0 && y >= metaStart {
+					// Store metadata byte as uint16 (matching Python behavior)
+					col.B = uint16(floats[y-metaStart])
+				} else {
+					col.B = uint16(int(float64(maxVal) * val2))
+				}
+				col.A = uint16(65535)
+				if reverse {
+					img.(*image.NRGBA64).SetNRGBA64(x, mels-y-1, col)
+				} else {
+					img.(*image.NRGBA64).SetNRGBA64(x, y, col)
+				}
 			} else {
-				col.B = uint8(int(255 * val2))
-			}
-			col.A = uint8(255)
-			if reverse {
-				img.SetNRGBA(x, mels-y-1, col)
-			} else {
-				img.SetNRGBA(x, y, col)
+				var col color.NRGBA
+				col.R = uint8(int(float64(maxVal) * val0))
+				col.G = uint8(int(float64(maxVal) * val1))
+				if x == 0 && y >= metaStart {
+					col.B = uint8(int(floats[y-metaStart]))
+				} else {
+					col.B = uint8(int(float64(maxVal) * val2))
+				}
+				col.A = uint8(255)
+				if reverse {
+					img.(*image.NRGBA).SetNRGBA(x, mels-y-1, col)
+				} else {
+					img.(*image.NRGBA).SetNRGBA(x, y, col)
+				}
 			}
 		}
 	}
