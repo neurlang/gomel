@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phase-spectrogram"
+version = "0.0.1"
+description = "Phase-preserving spectrogram encoder/decoder for high-quality audio reconstruction"
+readme = "README_PYTHON.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "Neurlang Project", email = "neurlang@proton.me"}
+]
+keywords = ["audio", "spectrogram", "phase", "stft", "signal-processing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "soundfile>=0.10.0",
+    "Pillow>=8.0.0",
+    "pypng>=0.20220715.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "hypothesis>=6.0.0",
+    "pytest>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/neurlang/gomel"
+Repository = "https://github.com/neurlang/gomel"
+"Bug Tracker" = "https://github.com/neurlang/gomel/issues"

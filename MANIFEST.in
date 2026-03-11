@@ -1,0 +1,8 @@
+include README.md
+include README_PYTHON.md
+include LICENSE
+include requirements.txt
+include __init__.py
+include phase.py
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
