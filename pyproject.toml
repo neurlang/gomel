@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phase-spectrogram"
-version = "0.0.1"
+version = "0.0.10"
 description = "Phase-preserving spectrogram encoder/decoder for high-quality audio reconstruction"
 readme = "README_PYTHON.md"
 requires-python = ">=3.7"
