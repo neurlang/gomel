@@ -113,68 +113,33 @@ class Phase:
     def to_phase(self, audio_buffer):
         """
         Convert audio buffer to phase-preserving spectrogram.
-        
-        Args:
-            audio_buffer: 1D numpy array of float64 audio samples
-            
-        Returns:
-            2D numpy array of shape (time_frames * num_freqs, 3) containing
-            [realn1, realm0, realm1] for each time-frequency bin
         """
-        # Subtask 5.1: Apply padding and compute STFT
         padded_audio = pad(audio_buffer, self.window)
-        
-        # gossp: stft.New(Window, Resolut) means FrameShift=Window, FrameLen=Resolut
-        hop_size = self.window  # FrameShift
-        frame_len = self.resolut  # FrameLen
-        
-        # NumFrames = int((len(input) - frameLen) / frameShift) + 1
+
+        hop_size = self.window
+        frame_len = self.resolut
         num_frames = int((len(padded_audio) - frame_len) / hop_size) + 1
-        
-        # Hann window is frameLen (resolut) long
         hann_window = np.hanning(frame_len)
-        
-        # Perform STFT
-        stft_result = np.zeros((frame_len, num_frames), dtype=np.complex128)
-        
-        for i in range(num_frames):
-            start = i * hop_size
-            end = start + frame_len
-            
-            if end <= len(padded_audio):
-                frame = padded_audio[start:end] * hann_window
-                stft_result[:, i] = np.fft.fft(frame)
-        
-        # Subtask 5.2: Extract 2-channel phase representation from STFT
-        # Blue channel (realm1 = imag(v1)) is redundant since realm1 = -realn1
-        # due to conjugate symmetry of real signals
-        time_frames = stft_result.shape[1]
+
+        # Vectorised STFT: stack all frames, apply window, FFT in one shot
+        indices = np.arange(frame_len)[None, :] + np.arange(num_frames)[:, None] * hop_size
+        frames = padded_audio[indices] * hann_window  # (num_frames, frame_len)
+        stft_result = np.fft.fft(frames, axis=1).T  # (frame_len, num_frames)
+
         num_bins = self.resolut // 2
-        
-        # Create output array - Go layout is: for each time frame, append all frequency bins
-        phase_repr = []
-        
-        # For each time frame and frequency bin:
-        # v0 = spectrum[j+1], v1 = spectrum[resolut-j-1]
-        # realn1 = imag(v0), realm0 = real(v1)
-        # Note: realm1 = imag(v1) = -imag(v0) = -realn1 (not stored)
-        for t in range(time_frames):
-            for j in range(num_bins):
-                v0 = stft_result[j + 1, t]
-                v1 = stft_result[self.resolut - j - 1, t]
-                
-                realn1 = np.imag(v0)
-                realm0 = np.real(v1)
-                
-                phase_repr.append([realn1, realm0])
-        
-        phase_repr = np.array(phase_repr, dtype=np.float64)
-        
-        # Subtask 5.3: Apply shrink
-        # Shrink from resolut/2 bins to num_freqs bins
-        shrunken = shrink(phase_repr, self.resolut, self.num_freqs)
-        
-        return shrunken
+        # j = 0..num_bins-1  →  v0 = stft[j+1], v1 = stft[resolut-j-1]
+        j = np.arange(num_bins)
+        v0 = stft_result[j + 1, :]          # (num_bins, num_frames)
+        v1 = stft_result[self.resolut - j - 1, :]
+
+        realn1 = np.imag(v0)                # (num_bins, num_frames)
+        realm0 = np.real(v1)
+
+        # Layout: for each time frame, all frequency bins → (num_frames*num_bins, 2)
+        phase_repr = np.stack([realn1, realm0], axis=2)  # (num_bins, num_frames, 2)
+        phase_repr = phase_repr.transpose(1, 0, 2).reshape(-1, 2).astype(np.float64)
+
+        return shrink(phase_repr, self.resolut, self.num_freqs)
     
     def from_phase(self, spectrogram):
         """
@@ -471,28 +436,11 @@ def spectral_denormalize(spectrogram):
 
 
 def shrink(spectrogram, resolut, num_freqs):
-    """
-    Reduce frequency bins from resolut/2 to num_freqs.
-    
-    Args:
-        spectrogram: 2D numpy array of shape (time_frames * resolut/2, 2)
-        resolut: FFT resolution
-        num_freqs: Target number of frequency bins
-        
-    Returns:
-        Shrunken spectrogram of shape (time_frames * num_freqs, 2)
-    """
-    # Go implementation: keep only entries where (i % imels) < omels
-    # This means: for each time frame, keep only the first num_freqs frequency bins
+    """Reduce frequency bins from resolut/2 to num_freqs."""
     original_bins = resolut // 2
-    
-    out = []
-    for i in range(len(spectrogram)):
-        j = i % original_bins
-        if j < num_freqs:
-            out.append(spectrogram[i])
-    
-    return np.array(out, dtype=spectrogram.dtype)
+    time_frames = len(spectrogram) // original_bins
+    # Reshape to (time_frames, original_bins, 2), keep first num_freqs bins, flatten
+    return spectrogram.reshape(time_frames, original_bins, 2)[:, :num_freqs, :].reshape(-1, 2)
 
 
 def grow(spectrogram, resolut, num_freqs):
