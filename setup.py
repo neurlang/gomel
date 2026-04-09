@@ -18,7 +18,7 @@ with open(os.path.join(this_directory, '__init__.py')) as f:
 
 setup(
     name='phase-spectrogram',
-    version=version.get('__version__', '0.0.10'),
+    version=version.get('__version__', '0.0.11'),
     author='Neurlang Project',
     author_email='neurlang@proton.me',
     description='Phase-preserving spectrogram encoder/decoder for high-quality audio reconstruction',
